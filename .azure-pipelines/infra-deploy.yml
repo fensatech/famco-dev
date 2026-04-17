@@ -1,0 +1,93 @@
+# FAMCO — Infrastructure Deploy Pipeline
+# Triggered manually. Creates/updates all Azure resources via Bicep.
+#
+# Prerequisites (one-time setup in ADO):
+#   1. Service Connection named "famco-azure-connection"
+#      ADO → Project Settings → Service connections → New → Azure Resource Manager
+#      → Service principal (automatic) → choose your subscription
+#   2. Variable Group named "famco-dev-secrets" (and "famco-prod-secrets")
+#      ADO → Pipelines → Library → + Variable group
+#      Add variables (mark as secret):
+#        AZURE_SUBSCRIPTION_ID   — your Azure subscription ID
+#        DB_ADMIN_PASSWORD       — strong password for PostgreSQL admin
+
+trigger: none   # manual run only
+
+parameters:
+  - name: environment
+    displayName: Target environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - prod
+
+variables:
+  - group: famco-${{ parameters.environment }}-secrets
+
+stages:
+
+  # ── Stage 1: Create the resource group (subscription scope) ─────────────────
+  - stage: CreateResourceGroup
+    displayName: Create Resource Group
+    jobs:
+      - job: CreateRG
+        displayName: Deploy rg.bicep
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: Create famco-${{ parameters.environment }}-rg
+            inputs:
+              deploymentScope: Subscription
+              azureResourceManagerConnection: famco-azure-connection
+              subscriptionId: $(AZURE_SUBSCRIPTION_ID)
+              location: UK South
+              templateLocation: Linked artifact
+              csmFile: infra/rg.bicep
+              overrideParameters: >-
+                -resourceGroupName "famco-${{ parameters.environment }}-rg"
+                -location "uksouth"
+              deploymentMode: Incremental
+
+  # ── Stage 2: Deploy all resources into the resource group ───────────────────
+  - stage: DeployInfrastructure
+    displayName: Deploy Infrastructure
+    dependsOn: CreateResourceGroup
+    jobs:
+      - deployment: DeployBicep
+        displayName: Deploy main.bicep
+        pool:
+          vmImage: ubuntu-latest
+        environment: ${{ parameters.environment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureResourceManagerTemplateDeployment@3
+                  displayName: Deploy FAMCO resources
+                  inputs:
+                    deploymentScope: Resource Group
+                    azureResourceManagerConnection: famco-azure-connection
+                    subscriptionId: $(AZURE_SUBSCRIPTION_ID)
+                    resourceGroupName: famco-${{ parameters.environment }}-rg
+                    location: UK South
+                    templateLocation: Linked artifact
+                    csmFile: infra/main.bicep
+                    csmParametersFile: infra/parameters/${{ parameters.environment }}.bicepparam
+                    overrideParameters: >-
+                      -dbAdminPassword "$(DB_ADMIN_PASSWORD)"
+                    deploymentMode: Incremental
+                    deploymentOutputs: bicepOutputs
+
+                # Print outputs so you can copy them into your variable group
+                - bash: |
+                    echo "##[section]Deployment Outputs"
+                    echo "$BICEP_OUTPUTS" | jq .
+                  displayName: Show resource details
+                  env:
+                    BICEP_OUTPUTS: $(bicepOutputs)

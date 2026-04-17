@@ -1,0 +1,125 @@
+# FAMCO — App Build & Deploy Pipeline
+# Triggers on push to main (→ prod) or dev branch (→ dev).
+# Builds Docker image, pushes to ACR, deploys to App Service.
+#
+# Prerequisites (one-time setup in ADO):
+#   1. Service Connection "famco-azure-connection" (same as infra pipeline)
+#   2. Variable Groups (ADO → Pipelines → Library):
+#
+#      "famco-dev-secrets"  and  "famco-prod-secrets"
+#      Each group needs these variables (mark secrets as secret 🔒):
+#
+#        AZURE_SUBSCRIPTION_ID          — Azure subscription ID
+#        ACR_LOGIN_SERVER               — from infra pipeline output (e.g. famcodevXXX.azurecr.io)
+#        ACR_NAME                       — ACR resource name
+#        APP_SERVICE_NAME               — e.g. famco-dev-app
+#        RESOURCE_GROUP                 — e.g. famco-dev-rg
+#        AUTH_SECRET          🔒        — openssl rand -base64 32
+#        NEXTAUTH_URL                   — https://famco-dev-app.azurewebsites.net
+#        GOOGLE_CLIENT_ID               — from Google Cloud Console
+#        GOOGLE_CLIENT_SECRET 🔒
+#        DATABASE_URL         🔒        — postgresql://famcoadmin:PASS@host:5432/famco?sslmode=require
+#        AZURE_STORAGE_CONNECTION_STRING 🔒  — from Storage Account → Access keys
+#        APPLE_ID                       — (optional)
+#        APPLE_SECRET         🔒        — (optional)
+#        APPLE_TEAM_ID                  — (optional)
+#        APPLE_KEY_ID                   — (optional)
+#        APPLE_PRIVATE_KEY    🔒        — (optional)
+
+trigger:
+  branches:
+    include:
+      - main   # → prod
+      - dev    # → dev
+
+variables:
+  ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+    targetEnv: prod
+  ${{ else }}:
+    targetEnv: dev
+  imageRepository: famco
+  tag: $(Build.BuildId)
+
+stages:
+
+  # ── Stage 1: Build & push Docker image to ACR ───────────────────────────────
+  - stage: Build
+    displayName: Build & Push Image
+    variables:
+      - group: famco-$(targetEnv)-secrets
+    jobs:
+      - job: BuildAndPush
+        displayName: Docker build → ACR
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: Log in to ACR
+            inputs:
+              azureSubscription: famco-azure-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr login --name $(ACR_NAME)
+
+          - task: Docker@2
+            displayName: Build and push $(imageRepository):$(tag)
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: Dockerfile
+              containerRegistry: famco-azure-connection
+              tags: |
+                $(tag)
+                latest
+
+  # ── Stage 2: Deploy to App Service ──────────────────────────────────────────
+  - stage: Deploy
+    displayName: Deploy to App Service ($(targetEnv))
+    dependsOn: Build
+    variables:
+      - group: famco-$(targetEnv)-secrets
+    jobs:
+      - deployment: DeployApp
+        displayName: Deploy container
+        pool:
+          vmImage: ubuntu-latest
+        environment: $(targetEnv)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+
+                # Inject all app secrets as App Service settings
+                - task: AzureAppServiceSettings@1
+                  displayName: Configure app settings
+                  inputs:
+                    azureSubscription: famco-azure-connection
+                    appName: $(APP_SERVICE_NAME)
+                    resourceGroupName: $(RESOURCE_GROUP)
+                    appSettings: |
+                      [
+                        {"name":"NEXTAUTH_URL",                    "value":"$(NEXTAUTH_URL)"},
+                        {"name":"AUTH_SECRET",                     "value":"$(AUTH_SECRET)"},
+                        {"name":"GOOGLE_CLIENT_ID",                "value":"$(GOOGLE_CLIENT_ID)"},
+                        {"name":"GOOGLE_CLIENT_SECRET",            "value":"$(GOOGLE_CLIENT_SECRET)"},
+                        {"name":"DATABASE_URL",                    "value":"$(DATABASE_URL)"},
+                        {"name":"AZURE_STORAGE_CONNECTION_STRING", "value":"$(AZURE_STORAGE_CONNECTION_STRING)"},
+                        {"name":"AZURE_STORAGE_CONTAINER_NAME",    "value":"calendars"},
+                        {"name":"APPLE_ID",                        "value":"$(APPLE_ID)"},
+                        {"name":"APPLE_SECRET",                    "value":"$(APPLE_SECRET)"},
+                        {"name":"APPLE_TEAM_ID",                   "value":"$(APPLE_TEAM_ID)"},
+                        {"name":"APPLE_KEY_ID",                    "value":"$(APPLE_KEY_ID)"},
+                        {"name":"APPLE_PRIVATE_KEY",               "value":"$(APPLE_PRIVATE_KEY)"}
+                      ]
+
+                # Deploy the container image
+                - task: AzureWebAppContainer@1
+                  displayName: Deploy $(imageRepository):$(tag)
+                  inputs:
+                    azureSubscription: famco-azure-connection
+                    appName: $(APP_SERVICE_NAME)
+                    resourceGroupName: $(RESOURCE_GROUP)
+                    containers: $(ACR_LOGIN_SERVER)/$(imageRepository):$(tag)
