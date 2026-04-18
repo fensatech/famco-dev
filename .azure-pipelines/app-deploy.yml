@@ -1,30 +1,29 @@
 # FAMCO — App Build & Deploy Pipeline
 # Triggers on push to main (→ prod) or dev branch (→ dev).
-# Builds Docker image, pushes to ACR, deploys to App Service.
+# Builds Docker image, pushes to ACR, deploys to Container Apps.
 #
-# Prerequisites (one-time setup in ADO):
-#   1. Service Connection "famco-azure-connection" (same as infra pipeline)
-#   2. Variable Groups (ADO → Pipelines → Library):
+# Variable Groups required (ADO → Pipelines → Library):
 #
-#      "famco-dev-secrets"  and  "famco-prod-secrets"
-#      Each group needs these variables (mark secrets as secret 🔒):
+#   "famco-dev-secrets"  and  "famco-prod-secrets"
+#   Each group needs (mark secrets with 🔒):
 #
-#        AZURE_SUBSCRIPTION_ID          — Azure subscription ID
-#        ACR_LOGIN_SERVER               — from infra pipeline output (e.g. famcodevXXX.azurecr.io)
-#        ACR_NAME                       — ACR resource name
-#        APP_SERVICE_NAME               — e.g. famco-dev-app
-#        RESOURCE_GROUP                 — e.g. famco-dev-rg
-#        AUTH_SECRET          🔒        — openssl rand -base64 32
-#        NEXTAUTH_URL                   — https://famco-dev-app.azurewebsites.net
-#        GOOGLE_CLIENT_ID               — from Google Cloud Console
-#        GOOGLE_CLIENT_SECRET 🔒
-#        DATABASE_URL         🔒        — postgresql://famcoadmin:PASS@host:5432/famco?sslmode=require
-#        AZURE_STORAGE_CONNECTION_STRING 🔒  — from Storage Account → Access keys
-#        APPLE_ID                       — (optional)
-#        APPLE_SECRET         🔒        — (optional)
-#        APPLE_TEAM_ID                  — (optional)
-#        APPLE_KEY_ID                   — (optional)
-#        APPLE_PRIVATE_KEY    🔒        — (optional)
+#     AZURE_SUBSCRIPTION_ID            — Azure subscription ID
+#     RESOURCE_GROUP                   — e.g. famco-dev-rg
+#     ACR_LOGIN_SERVER         🔒      — from infra output (e.g. famcodevXXX.azurecr.io)
+#     ACR_NAME                         — ACR resource name
+#     CONTAINER_APP_NAME               — e.g. famco-dev-app
+#     NEXTAUTH_URL                     — Front Door URL from infra output
+#     AUTH_SECRET              🔒      — openssl rand -base64 32
+#     GOOGLE_CLIENT_ID                 — from Google Cloud Console
+#     GOOGLE_CLIENT_SECRET     🔒
+#     DATABASE_URL             🔒      — postgresql://famcoadmin:PASS@host:5432/famco?sslmode=require
+#     AZURE_STORAGE_CONNECTION_STRING 🔒
+#     REDIS_URL                🔒      — rediss://:{key}@host:6380
+#     APPLE_ID                         — (optional, for future iOS)
+#     APPLE_SECRET             🔒      — (optional)
+#     APPLE_TEAM_ID                    — (optional)
+#     APPLE_KEY_ID                     — (optional)
+#     APPLE_PRIVATE_KEY        🔒      — (optional)
 
 trigger:
   branches:
@@ -75,9 +74,9 @@ stages:
                 $(tag)
                 latest
 
-  # ── Stage 2: Deploy to App Service ──────────────────────────────────────────
+  # ── Stage 2: Deploy to Azure Container Apps ──────────────────────────────────
   - stage: Deploy
-    displayName: Deploy to App Service ($(targetEnv))
+    displayName: Deploy to Container Apps ($(targetEnv))
     dependsOn: Build
     variables:
       - group: famco-$(targetEnv)-secrets
@@ -92,34 +91,59 @@ stages:
             deploy:
               steps:
 
-                # Inject all app secrets as App Service settings
-                - task: AzureAppServiceSettings@1
-                  displayName: Configure app settings
+                - task: AzureCLI@2
+                  displayName: Set Container App secrets
                   inputs:
                     azureSubscription: famco-azure-connection
-                    appName: $(APP_SERVICE_NAME)
-                    resourceGroupName: $(RESOURCE_GROUP)
-                    appSettings: |
-                      [
-                        {"name":"NEXTAUTH_URL",                    "value":"$(NEXTAUTH_URL)"},
-                        {"name":"AUTH_SECRET",                     "value":"$(AUTH_SECRET)"},
-                        {"name":"GOOGLE_CLIENT_ID",                "value":"$(GOOGLE_CLIENT_ID)"},
-                        {"name":"GOOGLE_CLIENT_SECRET",            "value":"$(GOOGLE_CLIENT_SECRET)"},
-                        {"name":"DATABASE_URL",                    "value":"$(DATABASE_URL)"},
-                        {"name":"AZURE_STORAGE_CONNECTION_STRING", "value":"$(AZURE_STORAGE_CONNECTION_STRING)"},
-                        {"name":"AZURE_STORAGE_CONTAINER_NAME",    "value":"calendars"},
-                        {"name":"APPLE_ID",                        "value":"$(APPLE_ID)"},
-                        {"name":"APPLE_SECRET",                    "value":"$(APPLE_SECRET)"},
-                        {"name":"APPLE_TEAM_ID",                   "value":"$(APPLE_TEAM_ID)"},
-                        {"name":"APPLE_KEY_ID",                    "value":"$(APPLE_KEY_ID)"},
-                        {"name":"APPLE_PRIVATE_KEY",               "value":"$(APPLE_PRIVATE_KEY)"}
-                      ]
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp secret set \
+                        --name $(CONTAINER_APP_NAME) \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --secrets \
+                          "auth-secret=$(AUTH_SECRET)" \
+                          "google-client-secret=$(GOOGLE_CLIENT_SECRET)" \
+                          "database-url=$(DATABASE_URL)" \
+                          "storage-conn=$(AZURE_STORAGE_CONNECTION_STRING)" \
+                          "redis-url=$(REDIS_URL)" \
+                          "apple-secret=$(APPLE_SECRET)" \
+                          "apple-private-key=$(APPLE_PRIVATE_KEY)"
 
-                # Deploy the container image
-                - task: AzureWebAppContainer@1
-                  displayName: Deploy $(imageRepository):$(tag)
+                - task: AzureCLI@2
+                  displayName: Deploy $(imageRepository):$(tag) to Container App
                   inputs:
                     azureSubscription: famco-azure-connection
-                    appName: $(APP_SERVICE_NAME)
-                    resourceGroupName: $(RESOURCE_GROUP)
-                    containers: $(ACR_LOGIN_SERVER)/$(imageRepository):$(tag)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp update \
+                        --name $(CONTAINER_APP_NAME) \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --image $(ACR_LOGIN_SERVER)/$(imageRepository):$(tag) \
+                        --set-env-vars \
+                          "NEXTAUTH_URL=$(NEXTAUTH_URL)" \
+                          "AUTH_SECRET=secretref:auth-secret" \
+                          "GOOGLE_CLIENT_ID=$(GOOGLE_CLIENT_ID)" \
+                          "GOOGLE_CLIENT_SECRET=secretref:google-client-secret" \
+                          "DATABASE_URL=secretref:database-url" \
+                          "AZURE_STORAGE_CONNECTION_STRING=secretref:storage-conn" \
+                          "AZURE_STORAGE_CONTAINER_NAME=calendars" \
+                          "REDIS_URL=secretref:redis-url" \
+                          "APPLE_ID=$(APPLE_ID)" \
+                          "APPLE_SECRET=secretref:apple-secret" \
+                          "APPLE_TEAM_ID=$(APPLE_TEAM_ID)" \
+                          "APPLE_KEY_ID=$(APPLE_KEY_ID)" \
+                          "APPLE_PRIVATE_KEY=secretref:apple-private-key"
+
+                - task: AzureCLI@2
+                  displayName: Verify deployment
+                  inputs:
+                    azureSubscription: famco-azure-connection
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az containerapp show \
+                        --name $(CONTAINER_APP_NAME) \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --query "properties.latestRevisionName" -o tsv

@@ -1,5 +1,6 @@
 // FAMCO — main infrastructure template
 // Deploys at resource group scope
+// Scales SKUs automatically by environment (dev = cost-optimised, prod = performance-optimised)
 
 @description('Application name (no spaces)')
 param appName string = 'famco'
@@ -14,15 +15,122 @@ param location string = resourceGroup().location
 @description('PostgreSQL admin username')
 param dbAdminLogin string = 'famcoadmin'
 
-@description('PostgreSQL admin password — pass from pipeline, never hardcode')
+@description('PostgreSQL admin password — passed from pipeline, never hardcode')
 @secure()
 param dbAdminPassword string
 
 var prefix = '${appName}-${environment}'
-// Storage account names: lowercase, 3-24 chars, globally unique
 var storageAccountName = toLower(take('${appName}${environment}${uniqueString(resourceGroup().id)}', 24))
-// ACR names: alphanumeric, globally unique
-var acrName = toLower(take('${appName}${environment}${uniqueString(resourceGroup().id)}acr', 50))
+var acrName            = toLower(take('${appName}${environment}${uniqueString(resourceGroup().id)}acr', 50))
+
+// Environment-aware SKU selection
+var postgresSkuName      = environment == 'prod' ? 'Standard_D2s_v3' : 'Standard_B2ms'
+var postgresTier         = environment == 'prod' ? 'GeneralPurpose'  : 'Burstable'
+var redisSkuName         = environment == 'prod' ? 'Standard'        : 'Basic'
+var redisCapacity        = environment == 'prod' ? 1                 : 0
+var containerCpu         = environment == 'prod' ? '1.0'             : '0.5'
+var containerMemory      = environment == 'prod' ? '2Gi'             : '1Gi'
+var containerMaxReplicas = environment == 'prod' ? 20                : 5
+
+
+// ── Log Analytics (required by Container Apps) ───────────────────────────────
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: '${prefix}-logs'
+  location: location
+  properties: {
+    sku: { name: 'PerGB2018' }
+    retentionInDays: 30
+  }
+}
+
+
+// ── Container Apps Environment ───────────────────────────────────────────────
+
+resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: '${prefix}-env'
+  location: location
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
+  }
+}
+
+
+// ── Container Registry (Standard — 100 GB, faster pulls for CI/CD) ───────────
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: acrName
+  location: location
+  sku: { name: 'Standard' }
+  properties: { adminUserEnabled: true }
+}
+
+
+// ── Container App (web + mobile API, scales to 0 when idle) ──────────────────
+
+resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${prefix}-app'
+  location: location
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    managedEnvironmentId: containerEnv.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 3000
+        transport: 'auto'
+        corsPolicy: {
+          allowedOrigins: ['*']
+          allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']
+          allowedHeaders: ['*']
+          allowCredentials: true
+        }
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          username: acr.listCredentials().username
+          passwordSecretRef: 'acr-password'
+        }
+      ]
+      secrets: [
+        { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: appName
+          // Placeholder image — app-deploy pipeline replaces this on first build
+          image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          resources: {
+            cpu: json(containerCpu)
+            memory: containerMemory
+          }
+          env: [
+            { name: 'PORT', value: '3000' }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0          // scales to zero overnight — saves cost
+        maxReplicas: containerMaxReplicas
+        rules: [
+          {
+            name: 'http-rule'
+            http: { metadata: { concurrentRequests: '50' } }
+          }
+        ]
+      }
+    }
+  }
+}
 
 
 // ── PostgreSQL Flexible Server ───────────────────────────────────────────────
@@ -31,8 +139,8 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
   name: '${prefix}-postgres'
   location: location
   sku: {
-    name: 'Standard_B1ms'
-    tier: 'Burstable'
+    name: postgresSkuName
+    tier: postgresTier
   }
   properties: {
     administratorLogin: dbAdminLogin
@@ -51,20 +159,13 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
 resource postgresDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
   parent: postgresServer
   name: 'famco'
-  properties: {
-    charset: 'UTF8'
-    collation: 'en_US.utf8'
-  }
+  properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
 
-// Allow other Azure services (App Service) to reach the DB
 resource postgresFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = {
   parent: postgresServer
   name: 'AllowAzureServices'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
+  properties: { startIpAddress: '0.0.0.0', endIpAddress: '0.0.0.0' }
 }
 
 
@@ -95,70 +196,95 @@ resource calendarsContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
 }
 
 
-// ── Container Registry ────────────────────────────────────────────────────────
+// ── Azure Cache for Redis (session + API response caching) ───────────────────
 
-resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: acrName
+resource redis 'Microsoft.Cache/redis@2023-08-01' = {
+  name: '${prefix}-redis'
   location: location
-  sku: { name: 'Basic' }
-  properties: { adminUserEnabled: true }
-}
-
-
-// ── App Service Plan + Web App ────────────────────────────────────────────────
-
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: '${prefix}-plan'
-  location: location
-  kind: 'linux'
-  sku: {
-    name: 'B1'
-    tier: 'Basic'
-  }
-  properties: { reserved: true }  // required for Linux
-}
-
-resource appService 'Microsoft.Web/sites@2023-12-01' = {
-  name: '${prefix}-app'
-  location: location
-  identity: { type: 'SystemAssigned' }
   properties: {
-    serverFarmId: appServicePlan.id
-    httpsOnly: true
-    siteConfig: {
-      linuxFxVersion: 'DOCKER|${acr.properties.loginServer}/${appName}:latest'
-      alwaysOn: true
-      minTlsVersion: '1.2'
-      appSettings: [
-        {
-          name: 'WEBSITES_PORT'
-          value: '3000'
-        }
-        {
-          name: 'DOCKER_REGISTRY_SERVER_URL'
-          value: 'https://${acr.properties.loginServer}'
-        }
-        {
-          name: 'DOCKER_REGISTRY_SERVER_USERNAME'
-          value: acr.listCredentials().username
-        }
-        {
-          name: 'DOCKER_REGISTRY_SERVER_PASSWORD'
-          value: acr.listCredentials().passwords[0].value
-        }
-        // App secrets are injected by the app-deploy pipeline, not here
-        // (AUTH_SECRET, GOOGLE_CLIENT_ID, DATABASE_URL, etc.)
-      ]
+    sku: {
+      name: redisSkuName
+      family: 'C'
+      capacity: redisCapacity
+    }
+    enableNonSslPort: false
+    minimumTlsVersion: '1.2'
+    redisConfiguration: {
+      'maxmemory-policy': 'allkeys-lru'
     }
   }
 }
 
 
-// ── Outputs (used by pipelines) ───────────────────────────────────────────────
+// ── Azure Front Door Standard (global CDN + WAF for web + mobile) ────────────
 
-output appServiceName string = appService.name
-output appServiceUrl string = 'https://${appService.properties.defaultHostName}'
-output postgresHost string = postgresServer.properties.fullyQualifiedDomainName
-output acrLoginServer string = acr.properties.loginServer
-output acrName string = acr.name
+resource frontDoor 'Microsoft.Cdn/profiles@2024-02-01' = {
+  name: '${prefix}-fd'
+  location: 'global'
+  sku: { name: 'Standard_AzureFrontDoor' }
+}
+
+resource fdEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-02-01' = {
+  parent: frontDoor
+  name: '${prefix}-endpoint'
+  location: 'global'
+  properties: { enabledState: 'Enabled' }
+}
+
+resource fdOriginGroup 'Microsoft.Cdn/profiles/originGroups@2024-02-01' = {
+  parent: frontDoor
+  name: '${prefix}-og'
+  properties: {
+    loadBalancingSettings: {
+      sampleSize: 4
+      successfulSamplesRequired: 3
+      additionalLatencyInMilliseconds: 50
+    }
+    healthProbeSettings: {
+      probePath: '/'
+      probeRequestType: 'HEAD'
+      probeProtocol: 'Https'
+      probeIntervalInSeconds: 60
+    }
+  }
+}
+
+resource fdOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = {
+  parent: fdOriginGroup
+  name: '${prefix}-origin'
+  properties: {
+    hostName: containerApp.properties.configuration.ingress.fqdn
+    httpPort: 80
+    httpsPort: 443
+    originHostHeader: containerApp.properties.configuration.ingress.fqdn
+    priority: 1
+    weight: 1000
+    enabledState: 'Enabled'
+  }
+}
+
+resource fdRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
+  parent: fdEndpoint
+  name: '${prefix}-route'
+  dependsOn: [fdOrigin]
+  properties: {
+    originGroup: { id: fdOriginGroup.id }
+    supportedProtocols: ['Http', 'Https']
+    patternsToMatch: ['/*']
+    forwardingProtocol: 'HttpsOnly'
+    linkToDefaultDomain: 'Enabled'
+    httpsRedirect: 'Enabled'
+  }
+}
+
+
+// ── Outputs (used by app-deploy pipeline and variable group setup) ────────────
+
+output containerAppName   string = containerApp.name
+output containerAppUrl    string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output frontDoorUrl       string = 'https://${fdEndpoint.properties.hostName}'
+output postgresHost       string = postgresServer.properties.fullyQualifiedDomainName
+output acrLoginServer     string = acr.properties.loginServer
+output acrName            string = acr.name
 output storageAccountName string = storageAccount.name
+output redisHostName      string = redis.properties.hostName
