@@ -137,16 +137,20 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pro
     fetch("/api/emails/scan", { method: "POST" }).catch(() => {})
   }, [provider])
 
-  async function refreshInsights() {
+  async function refreshInsights(): Promise<{ error?: string }> {
     sessionStorage.removeItem("famco_scan_done")
-    const res = await fetch("/api/emails/scan", { method: "POST" })
-    if (res.ok) {
-      // Reload scanned events from the server
+    try {
+      const res = await fetch("/api/emails/scan", { method: "POST" })
+      if (res.status === 401) return { error: "token_expired" }
+      if (!res.ok) return { error: "scan_failed" }
       const r = await fetch("/api/insights")
       if (r.ok) {
         const { events } = await r.json()
         setScannedEvents(events)
       }
+      return {}
+    } catch {
+      return { error: "network_error" }
     }
   }
 
@@ -673,15 +677,21 @@ function TasksTab({ pending, done, showAddTask, setShowAddTask, newTaskTitle, se
 }
 
 // ── Insights Tab ──────────────────────────────────────────────────────────────
-function InsightsTab({ scannedEvents, signedUpAt, provider, onRefresh }: { scannedEvents: ScannedEventRow[]; signedUpAt: string; provider: string; onRefresh: () => Promise<void> }) {
+function InsightsTab({ scannedEvents, signedUpAt, provider, onRefresh }: { scannedEvents: ScannedEventRow[]; signedUpAt: string; provider: string; onRefresh: () => Promise<{ error?: string }> }) {
   const [filter, setFilter] = useState<string>("upcoming")
   const [refreshing, setRefreshing] = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null)
+  const [scanError, setScanError] = useState<string | null>(null)
 
   async function handleRefresh() {
     setRefreshing(true)
-    await onRefresh()
-    setLastRefreshed(new Date().toLocaleTimeString())
+    setScanError(null)
+    const result = await onRefresh()
+    if (result.error) {
+      setScanError(result.error)
+    } else {
+      setLastRefreshed(new Date().toLocaleTimeString())
+    }
     setRefreshing(false)
   }
   const today = todayStr()
@@ -732,6 +742,22 @@ function InsightsTab({ scannedEvents, signedUpAt, provider, onRefresh }: { scann
           </button>
         )}
       </div>
+
+      {/* Error / token-expired banner */}
+      {scanError === "token_expired" && (
+        <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: "12px", padding: "0.875rem 1.125rem", marginBottom: "1.25rem", fontSize: "0.85rem", color: "#fbbf24", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          ⚠ Your Google session has expired —{" "}
+          <button onClick={() => signOut({ callbackUrl: "/" })} style={{ background: "none", border: "none", color: "#fbbf24", textDecoration: "underline", cursor: "pointer", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", padding: 0 }}>
+            sign out and sign back in
+          </button>
+          {" "}to reconnect Gmail.
+        </div>
+      )}
+      {scanError && scanError !== "token_expired" && (
+        <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "12px", padding: "0.875rem 1.125rem", marginBottom: "1.25rem", fontSize: "0.85rem", color: "#f87171" }}>
+          ⚠ Scan failed — please try again. If the problem persists, sign out and back in.
+        </div>
+      )}
 
       {/* Filter chips */}
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
