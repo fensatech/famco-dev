@@ -209,9 +209,33 @@ export function KidsForm({ initialKids }: Props) {
           <p style={{ color: "#f87171", fontSize: "0.8rem" }}>{serverError}</p>
         )}
 
-        <Button type="submit" loading={loading} fullWidth>
-          Finish Setup →
-        </Button>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <button
+            type="button"
+            onClick={() => router.push("/onboarding/family")}
+            style={{
+              flex: 1, padding: "0.7rem", borderRadius: "10px",
+              background: "none", border: "1px solid var(--border)",
+              color: "var(--muted)", fontSize: "0.85rem", cursor: "pointer",
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            ← Back
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              flex: 2, padding: "0.7rem", borderRadius: "10px",
+              background: loading ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)",
+              border: "none", color: "white", fontSize: "0.85rem",
+              fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            {loading ? "Saving…" : "Finish Setup →"}
+          </button>
+        </div>
       </form>
     </Card>
   )

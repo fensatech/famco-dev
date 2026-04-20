@@ -52,7 +52,7 @@ export default async function Home() {
             }}
           >
             Welcome to{" "}
-            <span className="gradient-text">FAMCO</span>
+            <span className="gradient-text">Famco</span>
           </h1>
           <p
             style={{
@@ -116,6 +116,43 @@ export default async function Home() {
             </button>
           </form>
 
+          {/* Microsoft */}
+          <form
+            action={async () => {
+              "use server"
+              await signIn("microsoft-entra-id", { redirectTo: "/" })
+            }}
+          >
+            <button
+              type="submit"
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.75rem",
+                padding: "0.875rem 1.5rem",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "12px",
+                color: "var(--text)",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                fontFamily: "'Inter',sans-serif",
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 21 21" fill="none">
+                <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+              </svg>
+              Continue with Microsoft
+            </button>
+          </form>
+
           {/* Apple */}
           <form
             action={async () => {
@@ -162,14 +199,14 @@ export default async function Home() {
         >
           By continuing you agree to our{" "}
           <a
-            href="https://fensatech.com/terms-of-use"
+            href="/legal/terms-of-use"
             style={{ color: "var(--accent)", textDecoration: "none" }}
           >
             Terms
           </a>{" "}
           and{" "}
           <a
-            href="https://fensatech.com/privacy-policy"
+            href="/legal/privacy-policy"
             style={{ color: "var(--accent)", textDecoration: "none" }}
           >
             Privacy Policy

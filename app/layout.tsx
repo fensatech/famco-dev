@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "FAMCO — Family Command Center",
+  title: "Famco — Family Command Center",
   description:
     "The all-in-one command center for every family. Manage schedules, school appointments, and daily life — together.",
 }

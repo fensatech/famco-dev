@@ -8,7 +8,7 @@ export default async function LocationPage() {
   if (!session?.profileId) redirect("/")
   const profile = await getProfile(session.profileId)
   if (profile?.onboarding_completed) redirect("/dashboard")
-  if ((profile?.onboarding_step ?? 0) < 2) redirect("/onboarding/emails")
+  if ((profile?.onboarding_step ?? 0) < 1) redirect("/onboarding/profile")
   return (
     <LocationForm
       city={profile?.city ?? ""}

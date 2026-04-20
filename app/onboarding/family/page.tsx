@@ -8,7 +8,7 @@ export default async function FamilyPage() {
   if (!session?.profileId) redirect("/")
   const profile = await getProfile(session.profileId)
   if (profile?.onboarding_completed) redirect("/dashboard")
-  if ((profile?.onboarding_step ?? 0) < 3) redirect("/onboarding/location")
+  if ((profile?.onboarding_step ?? 0) < 2) redirect("/onboarding/location")
   return (
     <FamilyForm
       familyType={profile?.family_type ?? null}

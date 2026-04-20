@@ -38,15 +38,27 @@ export interface CalendarFile {
   created_at: string
 }
 
-export interface ScannedMeeting {
-  subject: string
-  date: string
+export interface ScannedEvent {
+  gmail_message_id: string
+  title: string
+  event_date: string | null
+  event_type: "calendar_invite" | "appointment" | "school_event" | "medical" | "other"
+  organization_name: string | null
+  organization_type: "school" | "medical_clinic" | "dental" | "sports" | "pharmacy" | null
+  source_from: string
   snippet: string
+}
+
+export interface ScannedOrganization {
+  id: string
+  profile_id: string
+  name: string
+  type: string
+  email_domain: string
 }
 
 export const ONBOARDING_STEPS = [
   "profile",
-  "emails",
   "location",
   "family",
   "kids",
@@ -56,7 +68,6 @@ export type OnboardingStep = (typeof ONBOARDING_STEPS)[number]
 
 export const STEP_LABELS: Record<OnboardingStep, string> = {
   profile: "Profile",
-  emails: "Email Scan",
   location: "Location",
   family: "Family",
   kids: "Kids",

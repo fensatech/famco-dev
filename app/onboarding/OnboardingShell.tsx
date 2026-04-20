@@ -51,7 +51,7 @@ export function OnboardingShell({ children }: { children: React.ReactNode }) {
                 letterSpacing: "-0.02em",
               }}
             >
-              FAMCO Setup
+              Famco Setup
             </span>
           </div>
           <StepProgress current={step} />
