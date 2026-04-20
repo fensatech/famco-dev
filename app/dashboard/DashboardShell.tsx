@@ -457,12 +457,12 @@ function CalendarTab({ events, onDeleteEvent, showAddEvent, setShowAddEvent, new
     fetch("/api/gcal")
       .then(async (r) => {
         const d = await r.json()
-        if (r.status === 401) {
+        if (r.status === 401 || d.error === "token_expired") {
           setGcalError("session_expired")
         } else if (d.events) {
           setGcalEvents(d.events)
         } else {
-          setGcalError("Could not load Google Calendar")
+          setGcalError("session_expired")
         }
         setGcalLoading(false)
       })
@@ -695,7 +695,7 @@ function InsightsTab({ scannedEvents, signedUpAt, provider, onRefresh }: { scann
     setRefreshing(false)
   }
   const today = todayStr()
-  const signupDate = signedUpAt.split("T")[0]
+  const signupDate = new Date(signedUpAt).toISOString().split("T")[0]
 
   // Only events from sign-up date onwards, with a known date
   const relevant = scannedEvents.filter((e) => e.event_date && e.event_date >= signupDate)

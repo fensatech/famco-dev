@@ -42,7 +42,12 @@ export async function GET(req: NextRequest) {
     const msg = err instanceof Error ? err.message : "Unknown"
     console.error("[gcal]", msg)
     // Treat Google auth errors as 401 so the client can prompt re-login
-    if (msg.includes("invalid_grant") || msg.includes("Invalid Credentials") || msg.includes("invalid authentication")) {
+    if (
+      msg.includes("invalid_grant") || msg.includes("Invalid Credentials") ||
+      msg.includes("invalid authentication") || msg.includes("Token has been expired") ||
+      msg.includes("UNAUTHENTICATED") || msg.includes("unauthorized") ||
+      msg.includes("access_denied") || msg.includes("invalid_token")
+    ) {
       return NextResponse.json({ error: "token_expired" }, { status: 401 })
     }
     return NextResponse.json({ error: "gcal_error" }, { status: 500 })
