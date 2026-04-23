@@ -37,19 +37,29 @@ CREATE TABLE IF NOT EXISTS calendars (
 );
 
 CREATE TABLE IF NOT EXISTS scanned_events (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id        TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  gmail_message_id  TEXT NOT NULL,
-  title             TEXT NOT NULL,
-  event_date        TIMESTAMPTZ,
-  event_type        TEXT NOT NULL DEFAULT 'other'
-                      CHECK (event_type IN ('calendar_invite','appointment','school_event','medical','other')),
-  organization_name TEXT,
-  organization_type TEXT
-                      CHECK (organization_type IN ('school','medical_clinic','dental','sports','pharmacy') OR organization_type IS NULL),
-  source_from       TEXT,
-  snippet           TEXT,
-  scanned_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id            TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  gmail_message_id      TEXT NOT NULL,
+  title                 TEXT NOT NULL,
+  event_date            TIMESTAMPTZ,
+  start_time            TIME,
+  end_time              TIME,
+  event_type            TEXT NOT NULL DEFAULT 'other'
+                          CHECK (event_type IN ('calendar_invite','appointment','school_event','medical','field_trip','no_school','special_day','other')),
+  organization_name     TEXT,
+  organization_type     TEXT
+                          CHECK (organization_type IN ('school','medical_clinic','dental','sports','pharmacy') OR organization_type IS NULL),
+  source_from           TEXT,
+  snippet               TEXT,
+  kid_name              TEXT,
+  grade                 TEXT,
+  school_name           TEXT,
+  special_instructions  TEXT,
+  urgency               TEXT NOT NULL DEFAULT 'normal' CHECK (urgency IN ('high','normal','low')),
+  auto_add_to_calendar  BOOLEAN NOT NULL DEFAULT FALSE,
+  calendar_title        TEXT,
+  ai_processed          BOOLEAN NOT NULL DEFAULT FALSE,
+  scanned_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (profile_id, gmail_message_id)
 );
 

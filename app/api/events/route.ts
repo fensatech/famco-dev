@@ -14,10 +14,10 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const body = await req.json()
-  const { title, event_date, start_time, end_time, description } = body
+  const { title, event_date, start_time, end_time, description, member_name, source } = body
   if (!title?.trim() || !event_date) {
     return NextResponse.json({ error: "title and event_date are required" }, { status: 400 })
   }
-  const event = await createEvent(session.profileId, { title: title.trim(), event_date, start_time, end_time, description })
+  const event = await createEvent(session.profileId, { title: title.trim(), event_date, start_time, end_time, description, member_name: member_name ?? null, source: source ?? "manual" })
   return NextResponse.json({ event }, { status: 201 })
 }

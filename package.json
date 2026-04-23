@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@azure/storage-blob": "^12.27.0",
     "@hookform/resolvers": "^5.2.2",
     "googleapis": "^171.4.0",

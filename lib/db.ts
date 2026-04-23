@@ -1,5 +1,5 @@
 import { getPool } from "./supabase"
-import type { Profile, Kid } from "@/types"
+import type { Profile, Kid, FamilyFact, RawFact } from "@/types"
 
 export async function createProfile(data: {
   id: string
@@ -31,6 +31,9 @@ export async function updateProfile(id: string, updates: Partial<Profile>) {
     "first_name", "last_name", "city", "timezone", "phone",
     "family_type", "co_parent_email", "partner_name",
     "onboarding_step", "onboarding_completed",
+    "spouse_first_name", "spouse_last_name", "spouse_phone", "spouse_email",
+    "address_street", "address_province", "address_postal", "address_country",
+    "work_type", "work_address", "spouse_work_type", "spouse_work_address",
   ]
   const keys = Object.keys(updates).filter((k) => allowed.includes(k))
   if (keys.length === 0) return
@@ -54,7 +57,7 @@ export async function getKids(profileId: string): Promise<Kid[]> {
 
 export async function replaceKids(
   profileId: string,
-  kids: { name: string; dob: string | null }[]
+  kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[]
 ) {
   const pool = getPool()
   const client = await pool.connect()
@@ -63,8 +66,43 @@ export async function replaceKids(
     await client.query("DELETE FROM kids WHERE profile_id = $1", [profileId])
     for (const kid of kids) {
       await client.query(
-        "INSERT INTO kids (profile_id, name, dob) VALUES ($1, $2, $3)",
-        [profileId, kid.name, kid.dob]
+        `INSERT INTO kids (profile_id, name, first_name, last_name, dob, school_name, grade, daycare_name, daycare_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [profileId, kid.name, kid.first_name ?? null, kid.last_name ?? null, kid.dob,
+         kid.school_name ?? null, kid.grade ?? null, kid.daycare_name ?? null, kid.daycare_address ?? null]
+      )
+    }
+    await client.query("COMMIT")
+  } catch (err) {
+    await client.query("ROLLBACK")
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function getPets(profileId: string) {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    "SELECT * FROM pets WHERE profile_id = $1 ORDER BY created_at",
+    [profileId]
+  )
+  return rows as { id: string; profile_id: string; name: string; animal_type: string; breed: string | null; dob: string | null; created_at: string }[]
+}
+
+export async function replacePets(
+  profileId: string,
+  pets: { name: string; animal_type: string; breed?: string | null; dob?: string | null }[]
+) {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    await client.query("DELETE FROM pets WHERE profile_id = $1", [profileId])
+    for (const pet of pets) {
+      await client.query(
+        "INSERT INTO pets (profile_id, name, animal_type, breed, dob) VALUES ($1, $2, $3, $4, $5)",
+        [profileId, pet.name, pet.animal_type, pet.breed ?? null, pet.dob ?? null]
       )
     }
     await client.query("COMMIT")
@@ -90,17 +128,48 @@ export async function saveCalendar(data: {
   )
 }
 
+export async function getLastScanDate(profileId: string): Promise<Date | null> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT MAX(scanned_at) AS last_scan FROM scanned_events WHERE profile_id = $1`,
+    [profileId]
+  )
+  return rows[0]?.last_scan ?? null
+}
+
+export async function getExistingMessageIds(profileId: string): Promise<Set<string>> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT gmail_message_id FROM scanned_events WHERE profile_id = $1 AND ai_processed = TRUE`,
+    [profileId]
+  )
+  return new Set(rows.map((r: { gmail_message_id: string }) => r.gmail_message_id))
+}
+
 export async function saveScannedEvents(
   profileId: string,
   events: {
     gmail_message_id: string
     title: string
     event_date: string | null
+    start_time?: string | null
+    end_time?: string | null
     event_type: string
     organization_name: string | null
     organization_type: string | null
     source_from: string
     snippet: string
+    kid_name?: string | null
+    grade?: string | null
+    school_name?: string | null
+    special_instructions?: string | null
+    urgency?: string | null
+    auto_add_to_calendar?: boolean
+    calendar_title?: string | null
+    ai_processed?: boolean
+    vendor?: string | null
+    amount?: number | null
+    recurrence?: string | null
   }[]
 ) {
   if (events.length === 0) return
@@ -108,12 +177,41 @@ export async function saveScannedEvents(
   for (const e of events) {
     await pool.query(
       `INSERT INTO scanned_events
-         (profile_id, gmail_message_id, title, event_date, event_type,
-          organization_name, organization_type, source_from, snippet)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (profile_id, gmail_message_id) DO NOTHING`,
-      [profileId, e.gmail_message_id, e.title, e.event_date ?? null,
-       e.event_type, e.organization_name, e.organization_type, e.source_from, e.snippet]
+         (profile_id, gmail_message_id, title, event_date, start_time, end_time,
+          event_type, organization_name, organization_type, source_from, snippet,
+          kid_name, grade, school_name, special_instructions, urgency,
+          auto_add_to_calendar, calendar_title, ai_processed, vendor, amount, recurrence)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       ON CONFLICT (profile_id, gmail_message_id) DO UPDATE SET
+         title = EXCLUDED.title,
+         event_date = COALESCE(EXCLUDED.event_date, scanned_events.event_date),
+         start_time = COALESCE(EXCLUDED.start_time, scanned_events.start_time),
+         end_time = COALESCE(EXCLUDED.end_time, scanned_events.end_time),
+         event_type = EXCLUDED.event_type,
+         organization_name = EXCLUDED.organization_name,
+         organization_type = EXCLUDED.organization_type,
+         snippet = EXCLUDED.snippet,
+         kid_name = COALESCE(EXCLUDED.kid_name, scanned_events.kid_name),
+         grade = COALESCE(EXCLUDED.grade, scanned_events.grade),
+         school_name = COALESCE(EXCLUDED.school_name, scanned_events.school_name),
+         special_instructions = COALESCE(EXCLUDED.special_instructions, scanned_events.special_instructions),
+         urgency = EXCLUDED.urgency,
+         auto_add_to_calendar = EXCLUDED.auto_add_to_calendar,
+         calendar_title = COALESCE(EXCLUDED.calendar_title, scanned_events.calendar_title),
+         ai_processed = EXCLUDED.ai_processed,
+         vendor = COALESCE(EXCLUDED.vendor, scanned_events.vendor),
+         amount = COALESCE(EXCLUDED.amount, scanned_events.amount),
+         recurrence = COALESCE(EXCLUDED.recurrence, scanned_events.recurrence),
+         scanned_at = NOW()`,
+      [
+        profileId, e.gmail_message_id, e.title, e.event_date ?? null,
+        e.start_time ?? null, e.end_time ?? null,
+        e.event_type, e.organization_name, e.organization_type, e.source_from, e.snippet,
+        e.kid_name ?? null, e.grade ?? null, e.school_name ?? null,
+        e.special_instructions ?? null, e.urgency ?? "normal",
+        e.auto_add_to_calendar ?? false, e.calendar_title ?? null, e.ai_processed ?? false,
+        e.vendor ?? null, e.amount ?? null, e.recurrence ?? null,
+      ]
     )
   }
 }
@@ -140,7 +238,13 @@ export async function getScannedEvents(profileId: string) {
     `SELECT * FROM scanned_events WHERE profile_id = $1 ORDER BY event_date DESC NULLS LAST`,
     [profileId]
   )
-  return rows
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return rows.map((r: any) => ({
+    ...r,
+    event_date: r.event_date instanceof Date ? r.event_date.toISOString() : r.event_date,
+    scanned_at: r.scanned_at instanceof Date ? r.scanned_at.toISOString() : r.scanned_at,
+    amount: r.amount != null ? Number(r.amount) : null,
+  }))
 }
 
 export async function getScannedOrganizations(profileId: string) {
@@ -160,6 +264,8 @@ export interface Event {
   start_time: string | null
   end_time: string | null
   description: string | null
+  member_name: string | null
+  source: string
   created_at: string
 }
 
@@ -185,14 +291,70 @@ export async function createEvent(profileId: string, data: {
   start_time?: string | null
   end_time?: string | null
   description?: string | null
+  member_name?: string | null
+  source?: string
 }): Promise<Event> {
   const pool = getPool()
   const { rows } = await pool.query<Event>(
-    `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [profileId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null, data.description ?? null]
+    `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [profileId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null,
+     data.description ?? null, data.member_name ?? null, data.source ?? "manual"]
   )
   return rows[0]
+}
+
+export interface IcsEvent {
+  title: string
+  event_date: string
+  start_time: string | null
+  end_time: string | null
+  description: string | null
+}
+
+export async function importIcsEvents(
+  profileId: string,
+  events: IcsEvent[],
+  memberName: string
+): Promise<{ imported: number; skipped: number }> {
+  const pool = getPool()
+  // Load existing events for deduplication
+  const { rows: existing } = await pool.query<{ title: string; event_date: string }>(
+    `SELECT title, event_date FROM events WHERE profile_id = $1`,
+    [profileId]
+  )
+  const existingSet = new Set(existing.map((e) => `${e.title.toLowerCase()}|${e.event_date}`))
+
+  let imported = 0, skipped = 0
+  for (const ev of events) {
+    const key = `${ev.title.toLowerCase()}|${ev.event_date}`
+    if (existingSet.has(key)) { skipped++; continue }
+    existingSet.add(key)
+    await pool.query(
+      `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'ics_import')`,
+      [profileId, ev.title, ev.event_date, ev.start_time, ev.end_time, ev.description, memberName]
+    )
+    imported++
+  }
+  return { imported, skipped }
+}
+
+export async function updateEvent(id: string, profileId: string, data: {
+  title?: string
+  event_date?: string
+  start_time?: string | null
+  end_time?: string | null
+  description?: string | null
+  member_name?: string | null
+}): Promise<Event | null> {
+  const pool = getPool()
+  const { rows } = await pool.query<Event>(
+    `UPDATE events SET title=$3, event_date=$4, start_time=$5, end_time=$6, description=$7, member_name=$8
+     WHERE id=$1 AND profile_id=$2 RETURNING *`,
+    [id, profileId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null, data.description ?? null, data.member_name ?? null]
+  )
+  return rows[0] ?? null
 }
 
 export async function deleteEvent(id: string, profileId: string) {
@@ -243,4 +405,108 @@ export async function toggleTask(id: string, profileId: string, completed: boole
 export async function deleteTask(id: string, profileId: string) {
   const pool = getPool()
   await pool.query(`DELETE FROM tasks WHERE id = $1 AND profile_id = $2`, [id, profileId])
+}
+
+export interface Expense {
+  id: string
+  profile_id: string
+  title: string
+  amount: number
+  category: string | null
+  expense_date: string
+  notes: string | null
+  created_at: string
+}
+
+export async function getExpenses(profileId: string): Promise<Expense[]> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT * FROM expenses WHERE profile_id = $1 ORDER BY expense_date DESC, created_at DESC LIMIT 200`,
+    [profileId]
+  )
+  return rows.map((r: any) => ({
+    ...r,
+    expense_date: r.expense_date instanceof Date ? r.expense_date.toISOString().split("T")[0] : String(r.expense_date).slice(0, 10),
+    amount: Number(r.amount),
+  }))
+}
+
+export async function createExpense(profileId: string, data: {
+  title: string; amount: number; category?: string | null; expense_date: string; notes?: string | null
+}): Promise<Expense> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `INSERT INTO expenses (profile_id, title, amount, category, expense_date, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [profileId, data.title, data.amount, data.category ?? null, data.expense_date, data.notes ?? null]
+  )
+  const r = rows[0]
+  return { ...r, expense_date: String(r.expense_date).slice(0, 10), amount: Number(r.amount) }
+}
+
+export async function deleteExpense(id: string, profileId: string) {
+  const pool = getPool()
+  await pool.query(`DELETE FROM expenses WHERE id = $1 AND profile_id = $2`, [id, profileId])
+}
+
+// ── Family Facts ──────────────────────────────────────────────────────────────
+
+export async function getFamilyFacts(profileId: string): Promise<FamilyFact[]> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT * FROM family_facts WHERE profile_id = $1 ORDER BY subject, predicate, confidence DESC`,
+    [profileId]
+  )
+  return rows.map((r: any) => ({
+    ...r,
+    source_email_ids: r.source_email_ids ?? [],
+    first_seen: r.first_seen instanceof Date ? r.first_seen.toISOString() : r.first_seen,
+    last_confirmed: r.last_confirmed instanceof Date ? r.last_confirmed.toISOString() : r.last_confirmed,
+  }))
+}
+
+export async function upsertFacts(profileId: string, facts: RawFact[]): Promise<void> {
+  if (facts.length === 0) return
+  const pool = getPool()
+  for (const f of facts) {
+    const emailId = f.gmail_message_id ?? null
+    await pool.query(
+      `INSERT INTO family_facts
+         (profile_id, subject, subject_type, predicate, object, confidence, evidence_count, source_email_ids, status)
+       VALUES ($1,$2,$3,$4,$5,$6,1,ARRAY[$7]::TEXT[],'confirmed')
+       ON CONFLICT (profile_id, subject, predicate, object) DO UPDATE SET
+         confidence     = LEAST(0.99, (family_facts.confidence * family_facts.evidence_count + $6) / (family_facts.evidence_count + 1)),
+         evidence_count = family_facts.evidence_count + 1,
+         source_email_ids = (
+           SELECT ARRAY(SELECT DISTINCT unnest(family_facts.source_email_ids || ARRAY[$7]::TEXT[]))
+           WHERE $7 IS NOT NULL
+         ),
+         last_confirmed = NOW()`,
+      [profileId, f.subject, f.subject_type, f.predicate, f.object, f.confidence, emailId]
+    )
+  }
+}
+
+export async function updateFactStatus(
+  profileId: string,
+  id: string,
+  status: "confirmed" | "uncertain" | "conflicted"
+): Promise<void> {
+  const pool = getPool()
+  await pool.query(
+    `UPDATE family_facts SET status = $3 WHERE id = $1 AND profile_id = $2`,
+    [id, profileId, status]
+  )
+}
+
+export async function deleteFact(id: string, profileId: string): Promise<void> {
+  const pool = getPool()
+  await pool.query(`DELETE FROM family_facts WHERE id = $1 AND profile_id = $2`, [id, profileId])
+}
+
+export async function updateFactObject(id: string, profileId: string, object: string): Promise<void> {
+  const pool = getPool()
+  await pool.query(
+    `UPDATE family_facts SET object = $3, status = 'confirmed' WHERE id = $1 AND profile_id = $2`,
+    [id, profileId, object]
+  )
 }
