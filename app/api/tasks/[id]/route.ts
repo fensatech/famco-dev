@@ -11,6 +11,7 @@ export async function PATCH(
   const { id } = await params
   const { completed } = await req.json()
   const task = await toggleTask(id, session.profileId, !!completed)
+  if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json({ task })
 }
 

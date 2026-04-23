@@ -349,10 +349,30 @@ export async function updateEvent(id: string, profileId: string, data: {
   member_name?: string | null
 }): Promise<Event | null> {
   const pool = getPool()
+  const allowed = [
+    "title",
+    "event_date",
+    "start_time",
+    "end_time",
+    "description",
+    "member_name",
+  ] as const
+  const keys = allowed.filter((key) => key in data)
+
+  if (keys.length === 0) {
+    const { rows } = await pool.query<Event>(
+      `SELECT * FROM events WHERE id = $1 AND profile_id = $2`,
+      [id, profileId]
+    )
+    return rows[0] ?? null
+  }
+
+  const setClauses = keys.map((key, index) => `"${key}" = $${index + 3}`)
+  const values = keys.map((key) => data[key] ?? null)
   const { rows } = await pool.query<Event>(
-    `UPDATE events SET title=$3, event_date=$4, start_time=$5, end_time=$6, description=$7, member_name=$8
-     WHERE id=$1 AND profile_id=$2 RETURNING *`,
-    [id, profileId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null, data.description ?? null, data.member_name ?? null]
+    `UPDATE events SET ${setClauses.join(", ")}
+     WHERE id = $1 AND profile_id = $2 RETURNING *`,
+    [id, profileId, ...values]
   )
   return rows[0] ?? null
 }
@@ -393,13 +413,13 @@ export async function createTask(profileId: string, data: {
   return rows[0]
 }
 
-export async function toggleTask(id: string, profileId: string, completed: boolean): Promise<Task> {
+export async function toggleTask(id: string, profileId: string, completed: boolean): Promise<Task | null> {
   const pool = getPool()
   const { rows } = await pool.query<Task>(
     `UPDATE tasks SET completed = $3, completed_at = $4 WHERE id = $1 AND profile_id = $2 RETURNING *`,
     [id, profileId, completed, completed ? new Date().toISOString() : null]
   )
-  return rows[0]
+  return rows[0] ?? null
 }
 
 export async function deleteTask(id: string, profileId: string) {
@@ -420,11 +440,11 @@ export interface Expense {
 
 export async function getExpenses(profileId: string): Promise<Expense[]> {
   const pool = getPool()
-  const { rows } = await pool.query(
+  const { rows } = await pool.query<Expense & { expense_date: string | Date; amount: string | number }>(
     `SELECT * FROM expenses WHERE profile_id = $1 ORDER BY expense_date DESC, created_at DESC LIMIT 200`,
     [profileId]
   )
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     ...r,
     expense_date: r.expense_date instanceof Date ? r.expense_date.toISOString().split("T")[0] : String(r.expense_date).slice(0, 10),
     amount: Number(r.amount),
@@ -452,11 +472,15 @@ export async function deleteExpense(id: string, profileId: string) {
 
 export async function getFamilyFacts(profileId: string): Promise<FamilyFact[]> {
   const pool = getPool()
-  const { rows } = await pool.query(
+  const { rows } = await pool.query<FamilyFact & {
+    source_email_ids: string[] | null
+    first_seen: string | Date
+    last_confirmed: string | Date
+  }>(
     `SELECT * FROM family_facts WHERE profile_id = $1 ORDER BY subject, predicate, confidence DESC`,
     [profileId]
   )
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     ...r,
     source_email_ids: r.source_email_ids ?? [],
     first_seen: r.first_seen instanceof Date ? r.first_seen.toISOString() : r.first_seen,
