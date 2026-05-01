@@ -445,6 +445,10 @@ export async function deleteTask(id: string, profileId: string) {
   await pool.query(`DELETE FROM tasks WHERE id = $1 AND profile_id = $2`, [id, profileId])
 }
 
+function isDateValue(value: unknown): value is Date {
+  return value instanceof Date
+}
+
 export interface Expense {
   id: string
   profile_id: string
@@ -464,7 +468,7 @@ export async function getExpenses(profileId: string): Promise<Expense[]> {
   )
   return rows.map((r) => ({
     ...r,
-    expense_date: r.expense_date instanceof Date ? r.expense_date.toISOString().split("T")[0] : String(r.expense_date).slice(0, 10),
+    expense_date: isDateValue(r.expense_date) ? r.expense_date.toISOString().split("T")[0] : String(r.expense_date).slice(0, 10),
     amount: Number(r.amount),
   }))
 }
@@ -501,8 +505,8 @@ export async function getFamilyFacts(profileId: string): Promise<FamilyFact[]> {
   return rows.map((r) => ({
     ...r,
     source_email_ids: r.source_email_ids ?? [],
-    first_seen: r.first_seen instanceof Date ? r.first_seen.toISOString() : r.first_seen,
-    last_confirmed: r.last_confirmed instanceof Date ? r.last_confirmed.toISOString() : r.last_confirmed,
+    first_seen: isDateValue(r.first_seen) ? r.first_seen.toISOString() : r.first_seen,
+    last_confirmed: isDateValue(r.last_confirmed) ? r.last_confirmed.toISOString() : r.last_confirmed,
   }))
 }
 

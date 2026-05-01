@@ -19,6 +19,18 @@ param dbAdminLogin string = 'famcoadmin'
 @secure()
 param dbAdminPassword string
 
+@description('Allowed origins for direct browser access to the container app')
+param corsAllowedOrigins array = environment == 'prod'
+  ? [
+      'https://famco.fensatech.com'
+    ]
+  : [
+      'http://localhost:3000'
+    ]
+
+@description('Public IPv4 addresses allowed to reach PostgreSQL (for app egress, local migrations, or admin access)')
+param postgresAllowedFirewallIps array = []
+
 var prefix = '${appName}-${environment}'
 var storageAccountName = toLower(take('${appName}${environment}${uniqueString(resourceGroup().id)}', 24))
 var acrName            = toLower(take('${appName}${environment}${uniqueString(resourceGroup().id)}acr', 50))
@@ -68,7 +80,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
   location: location
   sku: { name: 'Standard' }
-  properties: { adminUserEnabled: true }
+  properties: { adminUserEnabled: false }
 }
 
 
@@ -86,7 +98,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 3000
         transport: 'auto'
         corsPolicy: {
-          allowedOrigins: ['*']
+          allowedOrigins: corsAllowedOrigins
           allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']
           allowedHeaders: ['*']
           allowCredentials: true
@@ -95,12 +107,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       registries: [
         {
           server: acr.properties.loginServer
-          username: acr.listCredentials().username
-          passwordSecretRef: 'acr-password'
+          identity: 'system'
         }
-      ]
-      secrets: [
-        { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
       ]
     }
     template: {
@@ -132,6 +140,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, containerApp.id, 'acrpull')
+  scope: acr
+  properties: {
+    principalId: containerApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  }
+}
+
 
 // ── PostgreSQL Flexible Server ───────────────────────────────────────────────
 
@@ -146,6 +164,9 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
     administratorLogin: dbAdminLogin
     administratorLoginPassword: dbAdminPassword
     version: '16'
+    network: {
+      publicNetworkAccess: 'Enabled'
+    }
     storage: { storageSizeGB: 32 }
     backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
     highAvailability: { mode: 'Disabled' }
@@ -162,11 +183,14 @@ resource postgresDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
 
-resource postgresFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = {
+resource postgresFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = [for ip in postgresAllowedFirewallIps: {
   parent: postgresServer
-  name: 'AllowAzureServices'
-  properties: { startIpAddress: '0.0.0.0', endIpAddress: '0.0.0.0' }
-}
+  name: 'manual-${replace(ip, '.', '-')}'
+  properties: {
+    startIpAddress: ip
+    endIpAddress: ip
+  }
+}]
 
 
 // ── Storage Account (calendar .ics uploads) ──────────────────────────────────
@@ -181,6 +205,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
     supportsHttpsTrafficOnly: true
+    defaultToOAuthAuthentication: true
   }
 }
 
@@ -193,6 +218,16 @@ resource calendarsContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   parent: blobService
   name: 'calendars'
   properties: { publicAccess: 'None' }
+}
+
+resource storageBlobContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, containerApp.id, 'storage-blob-contributor')
+  scope: storageAccount
+  properties: {
+    principalId: containerApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  }
 }
 
 
@@ -284,6 +319,7 @@ output containerAppName   string = containerApp.name
 output containerAppUrl    string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
 output frontDoorUrl       string = 'https://${fdEndpoint.properties.hostName}'
 output postgresHost       string = postgresServer.properties.fullyQualifiedDomainName
+output containerAppOutboundIps array = containerApp.properties.outboundIpAddresses
 output acrLoginServer     string = acr.properties.loginServer
 output acrName            string = acr.name
 output storageAccountName string = storageAccount.name
