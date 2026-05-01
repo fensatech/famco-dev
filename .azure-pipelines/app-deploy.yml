@@ -19,6 +19,9 @@
 #     DATABASE_URL             🔒      — postgresql://famcoadmin:PASS@host:5432/famco?sslmode=require
 #     AZURE_STORAGE_ACCOUNT_NAME      — preferred with Container App managed identity
 #     REDIS_URL                🔒      — rediss://:{key}@host:6380
+#     MICROSOFT_CLIENT_ID             — from Microsoft Entra app registration
+#     MICROSOFT_CLIENT_SECRET 🔒
+#     ANTHROPIC_API_KEY        🔒
 #     APPLE_ID                         — (optional, for future iOS)
 #     APPLE_SECRET             🔒      — (optional)
 #     APPLE_TEAM_ID                    — (optional)
@@ -106,6 +109,8 @@ stages:
                           "google-client-secret=$(GOOGLE_CLIENT_SECRET)" \
                           "database-url=$(DATABASE_URL)" \
                           "redis-url=$(REDIS_URL)" \
+                          "microsoft-client-secret=$(MICROSOFT_CLIENT_SECRET)" \
+                          "anthropic-api-key=$(ANTHROPIC_API_KEY)" \
                           "apple-secret=$(APPLE_SECRET)" \
                           "apple-private-key=$(APPLE_PRIVATE_KEY)"
 
@@ -129,6 +134,9 @@ stages:
                           "AZURE_STORAGE_ACCOUNT_NAME=$(AZURE_STORAGE_ACCOUNT_NAME)" \
                           "AZURE_STORAGE_CONTAINER_NAME=calendars" \
                           "REDIS_URL=secretref:redis-url" \
+                          "MICROSOFT_CLIENT_ID=$(MICROSOFT_CLIENT_ID)" \
+                          "MICROSOFT_CLIENT_SECRET=secretref:microsoft-client-secret" \
+                          "ANTHROPIC_API_KEY=secretref:anthropic-api-key" \
                           "APPLE_ID=$(APPLE_ID)" \
                           "APPLE_SECRET=secretref:apple-secret" \
                           "APPLE_TEAM_ID=$(APPLE_TEAM_ID)" \
