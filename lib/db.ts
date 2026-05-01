@@ -603,7 +603,27 @@ export async function upsertCoParentingSchedule(
   }
 ): Promise<CoParentingSchedule> {
   const pool = getPool()
-  await pool.query(`UPDATE coparenting_schedules SET active = false WHERE profile_id = $1`, [profileId])
+
+  // Prefer updating the existing active record so overrides (tied to schedule_id) are preserved.
+  const { rows: existing } = await pool.query(
+    `SELECT id FROM coparenting_schedules WHERE profile_id = $1 AND active = true ORDER BY created_at DESC LIMIT 1`,
+    [profileId]
+  )
+
+  if (existing[0]) {
+    const { rows } = await pool.query(
+      `UPDATE coparenting_schedules SET
+         schedule_type = $2, start_date = $3, exchange_time = $4, exchange_location = $5,
+         parent_a_name = $6, parent_b_name = $7, kid_ids = $8, updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [existing[0].id, data.schedule_type, data.start_date, data.exchange_time, data.exchange_location,
+       data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids)]
+    )
+    const r = rows[0]
+    return { ...r, start_date: String(r.start_date).slice(0, 10), kid_ids: Array.isArray(r.kid_ids) ? r.kid_ids : [] }
+  }
+
+  // No active schedule yet — insert a new one.
   const { rows } = await pool.query(
     `INSERT INTO coparenting_schedules
        (profile_id, schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids)

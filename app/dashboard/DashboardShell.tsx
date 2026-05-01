@@ -150,6 +150,8 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               setGcalLoaded={setGcalLoaded}
               onEventsRefresh={setEvents}
               openSignal={addEventSignal}
+              coparentingSchedule={coparentingSchedule}
+              coparentingOverrides={coparentingOverrides}
             />
           )}
 
