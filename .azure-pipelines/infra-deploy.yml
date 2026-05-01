@@ -10,6 +10,8 @@
 #      Add variables (mark as secret):
 #        AZURE_SUBSCRIPTION_ID   — your Azure subscription ID
 #        DB_ADMIN_PASSWORD       — strong password for PostgreSQL admin
+#        POSTGRES_ALLOWED_FIREWALL_IPS_JSON — JSON array of trusted public IPs
+#                                            e.g. ["20.10.75.139"]
 
 trigger: none   # manual run only
 
@@ -81,6 +83,7 @@ stages:
                     csmParametersFile: infra/parameters/${{ parameters.environment }}.bicepparam
                     overrideParameters: >-
                       -dbAdminPassword "$(DB_ADMIN_PASSWORD)"
+                      -postgresAllowedFirewallIps "$(POSTGRES_ALLOWED_FIREWALL_IPS_JSON)"
                     deploymentMode: Incremental
                     deploymentOutputs: bicepOutputs
 

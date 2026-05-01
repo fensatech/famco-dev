@@ -17,7 +17,7 @@
 #     GOOGLE_CLIENT_ID                 — from Google Cloud Console
 #     GOOGLE_CLIENT_SECRET     🔒
 #     DATABASE_URL             🔒      — postgresql://famcoadmin:PASS@host:5432/famco?sslmode=require
-#     AZURE_STORAGE_CONNECTION_STRING 🔒
+#     AZURE_STORAGE_ACCOUNT_NAME      — preferred with Container App managed identity
 #     REDIS_URL                🔒      — rediss://:{key}@host:6380
 #     APPLE_ID                         — (optional, for future iOS)
 #     APPLE_SECRET             🔒      — (optional)
@@ -105,7 +105,6 @@ stages:
                           "auth-secret=$(AUTH_SECRET)" \
                           "google-client-secret=$(GOOGLE_CLIENT_SECRET)" \
                           "database-url=$(DATABASE_URL)" \
-                          "storage-conn=$(AZURE_STORAGE_CONNECTION_STRING)" \
                           "redis-url=$(REDIS_URL)" \
                           "apple-secret=$(APPLE_SECRET)" \
                           "apple-private-key=$(APPLE_PRIVATE_KEY)"
@@ -127,7 +126,7 @@ stages:
                           "GOOGLE_CLIENT_ID=$(GOOGLE_CLIENT_ID)" \
                           "GOOGLE_CLIENT_SECRET=secretref:google-client-secret" \
                           "DATABASE_URL=secretref:database-url" \
-                          "AZURE_STORAGE_CONNECTION_STRING=secretref:storage-conn" \
+                          "AZURE_STORAGE_ACCOUNT_NAME=$(AZURE_STORAGE_ACCOUNT_NAME)" \
                           "AZURE_STORAGE_CONTAINER_NAME=calendars" \
                           "REDIS_URL=secretref:redis-url" \
                           "APPLE_ID=$(APPLE_ID)" \
