@@ -1,6 +1,6 @@
 import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
-import { toggleTask, deleteTask } from "@/lib/db"
+import { toggleTask, deleteTask, updateTask } from "@/lib/db"
 
 export async function PATCH(
   req: NextRequest,
@@ -9,8 +9,20 @@ export async function PATCH(
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const { id } = await params
-  const { completed } = await req.json()
-  const task = await toggleTask(id, session.profileId, !!completed)
+  const body = await req.json()
+
+  if (body.completed !== undefined) {
+    const task = await toggleTask(id, session.profileId, !!body.completed)
+    if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    return NextResponse.json({ task })
+  }
+
+  const task = await updateTask(id, session.profileId, {
+    title: body.title,
+    due_date: body.due_date ?? null,
+    due_time: body.due_time ?? null,
+    notes: body.notes ?? null,
+  })
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json({ task })
 }

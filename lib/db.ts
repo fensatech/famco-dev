@@ -387,6 +387,8 @@ export interface Task {
   profile_id: string
   title: string
   due_date: string | null
+  due_time: string | null
+  notes: string | null
   completed: boolean
   completed_at: string | null
   created_at: string
@@ -404,13 +406,29 @@ export async function getTasks(profileId: string): Promise<Task[]> {
 export async function createTask(profileId: string, data: {
   title: string
   due_date?: string | null
+  due_time?: string | null
+  notes?: string | null
 }): Promise<Task> {
   const pool = getPool()
   const { rows } = await pool.query<Task>(
-    `INSERT INTO tasks (profile_id, title, due_date) VALUES ($1,$2,$3) RETURNING *`,
-    [profileId, data.title, data.due_date ?? null]
+    `INSERT INTO tasks (profile_id, title, due_date, due_time, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [profileId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null]
   )
   return rows[0]
+}
+
+export async function updateTask(id: string, profileId: string, data: {
+  title: string
+  due_date: string | null
+  due_time: string | null
+  notes: string | null
+}): Promise<Task | null> {
+  const pool = getPool()
+  const { rows } = await pool.query<Task>(
+    `UPDATE tasks SET title = $3, due_date = $4, due_time = $5, notes = $6 WHERE id = $1 AND profile_id = $2 RETURNING *`,
+    [id, profileId, data.title, data.due_date, data.due_time, data.notes]
+  )
+  return rows[0] ?? null
 }
 
 export async function toggleTask(id: string, profileId: string, completed: boolean): Promise<Task | null> {
@@ -533,4 +551,96 @@ export async function updateFactObject(id: string, profileId: string, object: st
     `UPDATE family_facts SET object = $3, status = 'confirmed' WHERE id = $1 AND profile_id = $2`,
     [id, profileId, object]
   )
+}
+
+// ── Co-Parenting ──────────────────────────────────────────────────────────────
+
+export interface CoParentingSchedule {
+  id: string
+  profile_id: string
+  schedule_type: string
+  start_date: string
+  exchange_time: string | null
+  exchange_location: string | null
+  parent_a_name: string
+  parent_b_name: string
+  kid_ids: string[]
+  active: boolean
+  created_at: string
+}
+
+export interface CoParentingOverride {
+  id: string
+  schedule_id: string
+  profile_id: string
+  override_date: string
+  assigned_to: string
+  note: string | null
+  created_at: string
+}
+
+export async function getCoParentingSchedule(profileId: string): Promise<CoParentingSchedule | null> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT * FROM coparenting_schedules WHERE profile_id = $1 AND active = true ORDER BY created_at DESC LIMIT 1`,
+    [profileId]
+  )
+  if (!rows[0]) return null
+  const r = rows[0]
+  return { ...r, start_date: String(r.start_date).slice(0, 10), kid_ids: Array.isArray(r.kid_ids) ? r.kid_ids : [] }
+}
+
+export async function upsertCoParentingSchedule(
+  profileId: string,
+  data: {
+    schedule_type: string
+    start_date: string
+    exchange_time: string | null
+    exchange_location: string | null
+    parent_a_name: string
+    parent_b_name: string
+    kid_ids: string[]
+  }
+): Promise<CoParentingSchedule> {
+  const pool = getPool()
+  await pool.query(`UPDATE coparenting_schedules SET active = false WHERE profile_id = $1`, [profileId])
+  const { rows } = await pool.query(
+    `INSERT INTO coparenting_schedules
+       (profile_id, schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [profileId, data.schedule_type, data.start_date, data.exchange_time, data.exchange_location,
+     data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids)]
+  )
+  const r = rows[0]
+  return { ...r, start_date: String(r.start_date).slice(0, 10), kid_ids: Array.isArray(r.kid_ids) ? r.kid_ids : [] }
+}
+
+export async function getCoParentingOverrides(profileId: string, scheduleId: string): Promise<CoParentingOverride[]> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `SELECT * FROM coparenting_overrides WHERE profile_id = $1 AND schedule_id = $2 ORDER BY override_date ASC`,
+    [profileId, scheduleId]
+  )
+  return rows.map((r) => ({ ...r, override_date: String(r.override_date).slice(0, 10) }))
+}
+
+export async function createCoParentingOverride(
+  profileId: string,
+  data: { schedule_id: string; override_date: string; assigned_to: string; note: string | null }
+): Promise<CoParentingOverride> {
+  const pool = getPool()
+  const { rows } = await pool.query(
+    `INSERT INTO coparenting_overrides (profile_id, schedule_id, override_date, assigned_to, note)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (schedule_id, override_date) DO UPDATE SET assigned_to = EXCLUDED.assigned_to, note = EXCLUDED.note
+     RETURNING *`,
+    [profileId, data.schedule_id, data.override_date, data.assigned_to, data.note]
+  )
+  const r = rows[0]
+  return { ...r, override_date: String(r.override_date).slice(0, 10) }
+}
+
+export async function deleteCoParentingOverride(id: string, profileId: string): Promise<void> {
+  const pool = getPool()
+  await pool.query(`DELETE FROM coparenting_overrides WHERE id = $1 AND profile_id = $2`, [id, profileId])
 }

@@ -13,21 +13,18 @@ interface Props {
 export function FamilyForm({ familyType }: Props) {
   const router = useRouter()
   const [selected, setSelected] = useState<FamilyType | null>(familyType)
-  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [serverError, setServerError] = useState("")
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!selected) { setError("Please choose a family type"); return }
-
     setLoading(true)
     setServerError("")
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ family_type: selected, onboarding_step: 3 }),
+        body: JSON.stringify({ family_type: selected ?? null, onboarding_step: 3 }),
       })
       if (res.ok) { router.push("/onboarding/kids") }
       else { setServerError("Something went wrong. Please try again."); setLoading(false) }
@@ -43,7 +40,8 @@ export function FamilyForm({ familyType }: Props) {
         Family Type
       </h2>
       <p style={{ color: "var(--muted)", fontSize: "0.8rem", marginBottom: "1.5rem", lineHeight: 1.5 }}>
-        Help us tailor Famco to your family's situation.
+        Optional — helps Famco contextualise your household. You can set or change this anytime in{" "}
+        <strong style={{ color: "var(--text)" }}>Manage Family</strong>.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -54,7 +52,7 @@ export function FamilyForm({ familyType }: Props) {
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => { setSelected(opt.value); setError("") }}
+                onClick={() => setSelected(isActive ? null : opt.value)}
                 style={{
                   padding: "0.875rem",
                   borderRadius: "14px",
@@ -81,7 +79,6 @@ export function FamilyForm({ familyType }: Props) {
           })}
         </div>
 
-        {error && <p style={{ color: "#f87171", fontSize: "0.8rem" }}>{error}</p>}
         {serverError && <p style={{ color: "#f87171", fontSize: "0.8rem" }}>{serverError}</p>}
 
         <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.25rem" }}>
@@ -99,12 +96,12 @@ export function FamilyForm({ familyType }: Props) {
           </button>
           <button
             type="submit"
-            disabled={loading || !selected}
+            disabled={loading}
             style={{
               flex: 2, padding: "0.7rem", borderRadius: "10px",
-              background: !selected || loading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#c084fc)",
+              background: loading ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)",
               border: "none", color: "white", fontSize: "0.85rem",
-              fontWeight: 600, cursor: !selected || loading ? "not-allowed" : "pointer",
+              fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
               fontFamily: "'Inter',sans-serif",
             }}
           >

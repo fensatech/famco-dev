@@ -49,7 +49,7 @@ export default async function DashboardPage() {
       }))}
       pets={pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animal_type, breed: p.breed ?? null, dob: p.dob ? new Date(p.dob).toISOString().split("T")[0] : null }))}
       provider={session.provider ?? ""}
-      allEvents={allEvents}
+      events={allEvents}
       tasks={tasks}
       scannedEvents={scannedEvents}
       facts={facts}
