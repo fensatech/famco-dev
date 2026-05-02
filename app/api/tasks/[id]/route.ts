@@ -12,9 +12,9 @@ export async function PATCH(
   const body = await req.json()
 
   if (body.completed !== undefined) {
-    const task = await toggleTask(id, session.profileId, !!body.completed)
-    if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 })
-    return NextResponse.json({ task })
+    const result = await toggleTask(id, session.profileId, !!body.completed)
+    if (!result.task) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    return NextResponse.json(result)
   }
 
   const task = await updateTask(id, session.profileId, {
@@ -22,6 +22,8 @@ export async function PATCH(
     due_date: body.due_date ?? null,
     due_time: body.due_time ?? null,
     notes: body.notes ?? null,
+    assignee_name: body.assignee_name ?? null,
+    recurrence: body.recurrence ?? null,
   })
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json({ task })

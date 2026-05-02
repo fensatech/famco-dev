@@ -25,6 +25,37 @@ export async function POST() {
         dob DATE,
         created_at TIMESTAMPTZ DEFAULT now()
       );
+
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_name TEXT;
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
+
+      CREATE TABLE IF NOT EXISTS family_invites (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        invitee_email TEXT NOT NULL,
+        invited_name TEXT,
+        relation TEXT NOT NULL DEFAULT 'family_member',
+        role TEXT NOT NULL DEFAULT 'member',
+        token TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        accepted_by_profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
+        accepted_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '14 days'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS reminders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        source_type TEXT NOT NULL,
+        source_id TEXT,
+        title TEXT NOT NULL,
+        note TEXT,
+        remind_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `)
     return NextResponse.json({ ok: true })
   } catch (err) {

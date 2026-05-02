@@ -8,19 +8,24 @@ export type TaskEditData = {
   due_date: string | null
   due_time: string | null
   notes: string | null
+  assignee_name: string | null
+  recurrence: "daily" | "weekly" | "monthly" | null
 }
 
 interface Props {
   task: Task
+  assigneeOptions?: string[]
   onSave: (id: string, data: TaskEditData) => Promise<boolean>
   onCancel: () => void
 }
 
-export function EditTaskModal({ task, onSave, onCancel }: Props) {
+export function EditTaskModal({ task, assigneeOptions = [], onSave, onCancel }: Props) {
   const [title, setTitle] = useState(task.title)
   const [dueDate, setDueDate] = useState(task.due_date ?? "")
   const [dueTime, setDueTime] = useState(task.due_time ?? "")
   const [notes, setNotes] = useState(task.notes ?? "")
+  const [assigneeName, setAssigneeName] = useState(task.assignee_name ?? "")
+  const [recurrence, setRecurrence] = useState<"daily" | "weekly" | "monthly" | "">(task.recurrence ?? "")
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {
@@ -31,6 +36,8 @@ export function EditTaskModal({ task, onSave, onCancel }: Props) {
       due_date: dueDate || null,
       due_time: dueDate && dueTime ? dueTime : null,
       notes: notes.trim() || null,
+      assignee_name: assigneeName || null,
+      recurrence: recurrence || null,
     })
     setSaving(false)
     if (!ok) alert("Failed to save — please try again.")
@@ -76,6 +83,25 @@ export function EditTaskModal({ task, onSave, onCancel }: Props) {
                 disabled={!dueDate}
                 style={{ ...inputSt, marginTop: "0.3rem", colorScheme: "dark", opacity: dueDate ? 1 : 0.4, cursor: dueDate ? "text" : "not-allowed" }}
               />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
+            <div>
+              <label style={fieldLabelStyle}>Assign To</label>
+              <select value={assigneeName} onChange={(e) => setAssigneeName(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem" }}>
+                <option value="">Unassigned</option>
+                {assigneeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={fieldLabelStyle}>Repeats</label>
+              <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as "daily" | "weekly" | "monthly" | "")} style={{ ...inputSt, marginTop: "0.3rem" }}>
+                <option value="">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
             </div>
           </div>
 

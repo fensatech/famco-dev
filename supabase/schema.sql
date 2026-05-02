@@ -89,7 +89,45 @@ CREATE TABLE IF NOT EXISTS tasks (
   profile_id   TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   title        TEXT NOT NULL,
   due_date     DATE,
+  due_time     TIME,
+  notes        TEXT,
+  assignee_name TEXT,
+  recurrence   TEXT CHECK (recurrence IN ('daily','weekly','monthly') OR recurrence IS NULL),
   completed    BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS family_invites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  invitee_email TEXT NOT NULL,
+  invited_name TEXT,
+  relation TEXT NOT NULL DEFAULT 'family_member'
+    CHECK (relation IN ('partner', 'co_parent', 'family_member', 'caregiver')),
+  role TEXT NOT NULL DEFAULT 'member'
+    CHECK (role IN ('member', 'adult', 'co_parent')),
+  token TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')),
+  accepted_by_profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
+  accepted_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '14 days'),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  source_type TEXT NOT NULL
+    CHECK (source_type IN ('task', 'event', 'scanned_event', 'manual')),
+  source_id TEXT,
+  title TEXT NOT NULL,
+  note TEXT,
+  remind_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'dismissed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE NULLS NOT DISTINCT (profile_id, source_type, source_id)
 );

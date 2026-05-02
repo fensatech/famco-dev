@@ -1,15 +1,26 @@
 "use client"
 import { useState } from "react"
 import type { Event, Task } from "@/lib/db"
+import type { Reminder } from "@/types"
 import { todayStr } from "../lib/date"
 
 interface Options {
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
+  setReminders: React.Dispatch<React.SetStateAction<Reminder[]>>
 }
 
-export function useDashboardMutations({ setEvents, setTasks }: Options) {
+export function useDashboardMutations({ setEvents, setTasks, setReminders }: Options) {
   const [saving, setSaving] = useState(false)
+
+  async function refreshReminders() {
+    const res = await fetch("/api/reminders")
+    if (!res.ok) return
+    const { reminders } = await res.json()
+    if (Array.isArray(reminders)) {
+      setReminders(reminders)
+    }
+  }
 
   async function addEvent(title: string, date: string, time: string | null): Promise<boolean> {
     setSaving(true)
@@ -29,22 +40,30 @@ export function useDashboardMutations({ setEvents, setTasks }: Options) {
     return res.ok
   }
 
-  async function addTask(title: string, dueDate?: string, dueTime?: string, notes?: string): Promise<boolean> {
+  async function addTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly"): Promise<boolean> {
     setSaving(true)
     const res = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), due_date: dueDate || null, due_time: dueTime || null, notes: notes || null }),
+      body: JSON.stringify({
+        title: title.trim(),
+        due_date: dueDate || null,
+        due_time: dueTime || null,
+        notes: notes || null,
+        assignee_name: assigneeName || null,
+        recurrence: recurrence || null,
+      }),
     })
     if (res.ok) {
       const { task } = await res.json()
       setTasks((prev) => [task, ...prev])
+      await refreshReminders()
     }
     setSaving(false)
     return res.ok
   }
 
-  async function editTask(id: string, data: { title: string; due_date: string | null; due_time: string | null; notes: string | null }): Promise<boolean> {
+  async function editTask(id: string, data: { title: string; due_date: string | null; due_time: string | null; notes: string | null; assignee_name: string | null; recurrence: "daily" | "weekly" | "monthly" | null }): Promise<boolean> {
     const res = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -53,6 +72,7 @@ export function useDashboardMutations({ setEvents, setTasks }: Options) {
     if (res.ok) {
       const { task } = await res.json()
       setTasks((prev) => prev.map((t) => t.id === id ? task : t))
+      await refreshReminders()
     }
     return res.ok
   }
@@ -64,14 +84,19 @@ export function useDashboardMutations({ setEvents, setTasks }: Options) {
       body: JSON.stringify({ completed }),
     })
     if (res.ok) {
-      const { task } = await res.json()
-      setTasks((prev) => prev.map((t) => t.id === id ? task : t).sort((a, b) => Number(a.completed) - Number(b.completed)))
+      const { task, spawnedTask } = await res.json()
+      setTasks((prev) => {
+        const next = prev.map((t) => t.id === id ? task : t)
+        return (spawnedTask ? [spawnedTask, ...next] : next).sort((a, b) => Number(a.completed) - Number(b.completed))
+      })
+      await refreshReminders()
     }
   }
 
   async function deleteTask(id: string) {
     await fetch(`/api/tasks/${id}`, { method: "DELETE" })
     setTasks((prev) => prev.filter((t) => t.id !== id))
+    await refreshReminders()
   }
 
   async function deleteEvent(id: string) {

@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import type { Event, Task } from "@/lib/db"
-import type { FamilyFact } from "@/types"
+import type { FamilyFact, FamilyInvite, Reminder } from "@/types"
 import type { DashboardShellProps, Tab, GCalEvent, KidRow, PetRow, ScannedEventRow } from "./types"
 import { useSessionTimeout } from "./hooks/useSessionTimeout"
 import { useInsightsRefresh } from "./hooks/useInsightsRefresh"
@@ -20,7 +20,7 @@ import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
 import type { CoParentingSchedule, CoParentingOverride } from "./types"
 
-export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts }: DashboardShellProps) {
+export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, reminders: initialReminders }: DashboardShellProps) {
   const [tab, setTab] = useState<Tab>("home")
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -28,6 +28,8 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
   const [pets, setPets] = useState<PetRow[]>(initialPets)
   const [scannedEvents, setScannedEvents] = useState<ScannedEventRow[]>(initialScannedEvents)
   const [facts, setFacts] = useState<FamilyFact[]>(initialFacts)
+  const [invites, setInvites] = useState<FamilyInvite[]>(initialInvites)
+  const [reminders, setReminders] = useState<Reminder[]>(initialReminders)
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([])
   const [gcalLoaded, setGcalLoaded] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -83,14 +85,75 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
     onScannedEventsUpdate: setScannedEvents,
     onFactsUpdate: setFacts,
   })
-  const { saving, addEvent, addTask, editTask, toggleTask, deleteTask, deleteEvent, updateEvent } = useDashboardMutations({ setEvents, setTasks })
+  const { saving, addEvent, addTask, editTask, toggleTask, deleteTask, deleteEvent, updateEvent } = useDashboardMutations({ setEvents, setTasks, setReminders })
 
   const pending = tasks.filter((t) => !t.completed)
   const done = tasks.filter((t) => t.completed)
+  const activeReminders = reminders.filter((r) => r.status === "pending")
+  const assigneeOptions = [
+    [initialProfile.firstName, initialProfile.lastName].filter(Boolean).join(" "),
+    [initialProfile.spouseFirstName, initialProfile.spouseLastName].filter(Boolean).join(" "),
+    ...kids.map((kid) => kid.name),
+    ...invites.filter((invite) => invite.status === "accepted" && invite.invited_name).map((invite) => invite.invited_name as string),
+  ].map((name) => name.trim()).filter(Boolean).filter((name, index, list) => list.indexOf(name) === index)
   const todayEvents = events.filter((e) => {
     const today = new Date().toISOString().split("T")[0]
     return e.event_date === today
   })
+
+  async function createInvite(data: { invitee_email: string; invited_name?: string; relation: string; role: string }) {
+    const res = await fetch("/api/family/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) return false
+    const { invite } = await res.json()
+    setInvites((prev) => [invite, ...prev])
+    return true
+  }
+
+  async function revokeInvite(id: string) {
+    const res = await fetch(`/api/family/invites/${id}`, { method: "DELETE" })
+    if (!res.ok) return false
+    setInvites((prev) => prev.map((invite) => invite.id === id ? { ...invite, status: "revoked" } : invite))
+    return true
+  }
+
+  async function addReminder(data: { source_type: Reminder["source_type"]; source_id?: string | null; title: string; note?: string | null; remind_at: string }) {
+    const res = await fetch("/api/reminders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) return false
+    const { reminder } = await res.json()
+    setReminders((prev) => [...prev.filter((r) => r.id !== reminder.id && !(r.source_type === reminder.source_type && r.source_id === reminder.source_id)), reminder].sort((a, b) => a.remind_at.localeCompare(b.remind_at)))
+    return true
+  }
+
+  async function dismissReminderAction(id: string) {
+    const res = await fetch(`/api/reminders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "dismiss" }),
+    })
+    if (!res.ok) return false
+    setReminders((prev) => prev.filter((r) => r.id !== id))
+    return true
+  }
+
+  async function snoozeReminderAction(id: string, remindAt: string) {
+    const res = await fetch(`/api/reminders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "snooze", remind_at: remindAt }),
+    })
+    if (!res.ok) return false
+    const { reminder } = await res.json()
+    setReminders((prev) => prev.map((r) => r.id === id ? reminder : r).sort((a, b) => a.remind_at.localeCompare(b.remind_at)))
+    return true
+  }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg)" }}>
@@ -130,6 +193,10 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               onNavigate={setTab}
               coparentingSchedule={coparentingSchedule}
               coparentingOverrides={coparentingOverrides}
+              reminders={activeReminders}
+              assigneeOptions={assigneeOptions}
+              onDismissReminder={dismissReminderAction}
+              onSnoozeReminder={snoozeReminderAction}
             />
           )}
 
@@ -159,6 +226,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
             <TasksTab
               pending={pending}
               done={done}
+              assigneeOptions={assigneeOptions}
               onAddTask={addTask}
               onEditTask={editTask}
               onToggleTask={toggleTask}
@@ -171,12 +239,11 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
           {tab === "insights" && (
             <InsightsTab
               scannedEvents={scannedEvents}
-              signedUpAt={initialProfile.createdAt}
               provider={provider}
               onRefresh={refreshInsights}
-              kids={kids}
               onAddEvent={addEvent}
               onAddTask={addTask}
+              onAddReminder={addReminder}
             />
           )}
 
@@ -187,12 +254,24 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               facts={facts}
               scannedEvents={scannedEvents}
               onDeleteFact={async (id) => {
-                await fetch("/api/facts", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) })
+                const response = await fetch("/api/facts", {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id }),
+                })
+                if (!response.ok) return false
                 setFacts((prev) => prev.filter((f) => f.id !== id))
+                return true
               }}
               onUpdateFact={async (id, object) => {
-                await fetch("/api/facts", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, object }) })
+                const response = await fetch("/api/facts", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id, object }),
+                })
+                if (!response.ok) return false
                 setFacts((prev) => prev.map((f) => f.id === id ? { ...f, object, status: "confirmed" as const } : f))
+                return true
               }}
             />
           )}
@@ -220,6 +299,9 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               setKids={setKids}
               pets={pets}
               setPets={setPets}
+              invites={invites}
+              onInvite={createInvite}
+              onRevokeInvite={revokeInvite}
             />
           )}
 

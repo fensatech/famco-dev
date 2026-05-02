@@ -16,12 +16,13 @@ function fmtDue(dueDate: string | null, dueTime: string | null): string | null {
 
 interface Props {
   task: Task
+  assigneeOptions?: string[]
   onToggle: (id: string, c: boolean) => void
   onDelete: (id: string) => void
   onEdit?: (id: string, data: TaskEditData) => Promise<boolean>
 }
 
-export function TaskRow({ task, onToggle, onDelete, onEdit }: Props) {
+export function TaskRow({ task, assigneeOptions = [], onToggle, onDelete, onEdit }: Props) {
   const [showEdit, setShowEdit] = useState(false)
   const dueLabel = fmtDue(task.due_date, task.due_time)
 
@@ -30,6 +31,7 @@ export function TaskRow({ task, onToggle, onDelete, onEdit }: Props) {
       {showEdit && onEdit && (
         <EditTaskModal
           task={task}
+          assigneeOptions={assigneeOptions}
           onSave={async (id, data) => {
             const ok = await onEdit(id, data)
             if (ok) setShowEdit(false)
@@ -46,6 +48,12 @@ export function TaskRow({ task, onToggle, onDelete, onEdit }: Props) {
           <span style={{ fontSize: "0.875rem", textDecoration: task.completed ? "line-through" : "none", color: task.completed ? "var(--muted)" : "var(--text)" }}>{task.title}</span>
           {dueLabel && !task.completed && (
             <div style={{ fontSize: "0.7rem", color: "#f472b6", marginTop: "0.15rem", fontWeight: 500 }}>📅 {dueLabel}</div>
+          )}
+          {!task.completed && (task.assignee_name || task.recurrence) && (
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+              {task.assignee_name && <span style={{ fontSize: "0.64rem", color: "#6366F1", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: "999px", padding: "0.1rem 0.45rem", fontWeight: 700 }}>Assigned to {task.assignee_name}</span>}
+              {task.recurrence && <span style={{ fontSize: "0.64rem", color: "#8B5CF6", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.18)", borderRadius: "999px", padding: "0.1rem 0.45rem", fontWeight: 700 }}>Repeats {task.recurrence}</span>}
+            </div>
           )}
           {task.notes && !task.completed && (
             <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.15rem", lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{task.notes}</div>

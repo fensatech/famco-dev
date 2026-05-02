@@ -1,6 +1,6 @@
 import NextAuth from "next-auth"
 import { authConfig } from "./auth.config"
-import { createProfile } from "@/lib/db"
+import { acceptPendingFamilyInvites, createProfile } from "@/lib/db"
 
 async function refreshGoogleToken(refreshToken: string): Promise<{ accessToken: string; expiresAt: number } | null> {
   try {
@@ -30,12 +30,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user, account }) {
       if (!account || !user.email) return false
+      const profileId = `${account.provider}:${account.providerAccountId}`
       await createProfile({
-        id: `${account.provider}:${account.providerAccountId}`,
+        id: profileId,
         email: user.email,
         first_name: user.name?.split(" ")[0] ?? null,
         last_name: user.name?.split(" ").slice(1).join(" ") ?? null,
       })
+      await acceptPendingFamilyInvites(user.email, profileId)
       return true
     },
     async jwt({ token, account }) {

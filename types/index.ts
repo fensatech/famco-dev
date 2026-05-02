@@ -60,6 +60,34 @@ export interface Pet {
   created_at: string
 }
 
+export interface FamilyInvite {
+  id: string
+  profile_id: string
+  invitee_email: string
+  invited_name: string | null
+  relation: "partner" | "co_parent" | "family_member" | "caregiver"
+  role: "member" | "adult" | "co_parent"
+  token: string
+  status: "pending" | "accepted" | "revoked" | "expired"
+  accepted_by_profile_id: string | null
+  accepted_at: string | null
+  expires_at: string
+  created_at: string
+}
+
+export interface Reminder {
+  id: string
+  profile_id: string
+  source_type: "task" | "event" | "scanned_event" | "manual"
+  source_id: string | null
+  title: string
+  note: string | null
+  remind_at: string
+  status: "pending" | "dismissed"
+  created_at: string
+  updated_at: string
+}
+
 export interface CalendarFile {
   id: string
   profile_id: string

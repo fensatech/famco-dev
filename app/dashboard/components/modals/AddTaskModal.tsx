@@ -2,22 +2,40 @@
 import { useState } from "react"
 import { inputSt, fieldLabelStyle } from "../../styles"
 
+function currentDateValue() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function currentTimeValue() {
+  const now = new Date()
+  const hours = String(now.getHours()).padStart(2, "0")
+  const minutes = String(now.getMinutes()).padStart(2, "0")
+  return `${hours}:${minutes}`
+}
+
 interface Props {
-  onSave: (title: string, dueDate?: string, dueTime?: string, notes?: string) => void
+  assigneeOptions?: string[]
+  onSave: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => void
   onCancel: () => void
   saving: boolean
 }
 
-export function AddTaskModal({ onSave, onCancel, saving }: Props) {
+export function AddTaskModal({ assigneeOptions = [], onSave, onCancel, saving }: Props) {
   const [title, setTitle] = useState("")
-  const [dueDate, setDueDate] = useState("")
-  const [dueTime, setDueTime] = useState("")
+  const [dueDate, setDueDate] = useState(currentDateValue)
+  const [dueTime, setDueTime] = useState(currentTimeValue)
   const [notes, setNotes] = useState("")
+  const [assigneeName, setAssigneeName] = useState("")
+  const [recurrence, setRecurrence] = useState<"daily" | "weekly" | "monthly" | "">("")
   const [expanded, setExpanded] = useState(false)
 
   function handleSave() {
     if (!title.trim()) return
-    onSave(title.trim(), dueDate || undefined, dueTime || undefined, notes.trim() || undefined)
+    onSave(title.trim(), dueDate || undefined, dueTime || undefined, notes.trim() || undefined, assigneeName || undefined, recurrence || undefined)
   }
 
   return (
@@ -61,6 +79,24 @@ export function AddTaskModal({ onSave, onCancel, saving }: Props) {
                 <div>
                   <label style={fieldLabelStyle}>Due Time</label>
                   <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={!dueDate} style={{ ...inputSt, marginTop: "0.3rem", colorScheme: "dark", opacity: dueDate ? 1 : 0.4, cursor: dueDate ? "text" : "not-allowed" }} />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
+                <div>
+                  <label style={fieldLabelStyle}>Assign To</label>
+                  <select value={assigneeName} onChange={(e) => setAssigneeName(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem" }}>
+                    <option value="">Unassigned</option>
+                    {assigneeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={fieldLabelStyle}>Repeats</label>
+                  <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as "daily" | "weekly" | "monthly" | "")} style={{ ...inputSt, marginTop: "0.3rem" }}>
+                    <option value="">Does not repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
                 </div>
               </div>
               <div>

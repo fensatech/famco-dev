@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react"
 import type { Event, Task } from "@/lib/db"
 import type { Tab, ExpenseRow, KidRow, CoParentingSchedule, CoParentingOverride } from "../types"
+import type { Reminder } from "@/types"
 import { resolveParent, findNextExchange, formatExchangeDate } from "../lib/coparenting"
 import { todayStr, todayLabel, fmtTime } from "../lib/date"
 import { sectionCard } from "../styles"
@@ -17,11 +18,15 @@ interface Props {
   kids: KidRow[]
   events: Event[]
   pendingTasks: Task[]
+  reminders: Reminder[]
+  assigneeOptions: string[]
   onAddEvent: (title: string, date: string, time: string | null) => Promise<boolean>
-  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string) => Promise<boolean>
+  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
   onToggleTask: (id: string, c: boolean) => void
   onDeleteTask: (id: string) => void
   onDeleteEvent: (id: string) => void
+  onDismissReminder: (id: string) => Promise<boolean>
+  onSnoozeReminder: (id: string, remindAt: string) => Promise<boolean>
   saving: boolean
   totalTasks: number
   onNavigate: (tab: Tab) => void
@@ -29,7 +34,7 @@ interface Props {
   coparentingOverrides?: CoParentingOverride[]
 }
 
-export function HomeTab({ firstName, kids, events, pendingTasks, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, saving, onNavigate, coparentingSchedule, coparentingOverrides = [] }: Props) {
+export function HomeTab({ firstName, kids, events, pendingTasks, reminders, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [] }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [todayExpenses, setTodayExpenses] = useState<ExpenseRow[]>([])
@@ -46,7 +51,6 @@ export function HomeTab({ firstName, kids, events, pendingTasks, onAddEvent, onA
       .catch(() => {})
   }, [today])
 
-  const todayExpenseTotal = todayExpenses.reduce((s, e) => s + Number(e.amount), 0)
   const greetPart = (() => { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening" })()
 
   const cpSchedule = coparentingSchedule && coparentingSchedule.schedule_type !== "custom" ? coparentingSchedule : null
@@ -60,15 +64,22 @@ export function HomeTab({ firstName, kids, events, pendingTasks, onAddEvent, onA
     if (ok) setShowAddEvent(false)
   }
 
-  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string) {
-    const ok = await onAddTask(title, dueDate, dueTime, notes)
+  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") {
+    const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence)
     if (ok) setShowAddTask(false)
+  }
+
+  async function snoozeTomorrow(reminder: Reminder) {
+    const next = new Date()
+    next.setDate(next.getDate() + 1)
+    next.setHours(9, 0, 0, 0)
+    await onSnoozeReminder(reminder.id, next.toISOString())
   }
 
   return (
     <>
       {showAddEvent && <AddEventModal onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} initialDate={today} />}
-      {showAddTask && <AddTaskModal onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
+      {showAddTask && <AddTaskModal assigneeOptions={assigneeOptions} onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
 
       <div style={{ marginBottom: "2rem" }}>
         <h2 style={{ fontSize: "1.875rem", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "0.25rem" }}>
@@ -94,7 +105,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, onAddEvent, onA
         {([
           { label: "Events Today", value: events.length, gradient: "linear-gradient(135deg,#0EA5E9,#6366F1)", icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>) },
           { label: "Pending Tasks", value: pendingTasks.length, gradient: "linear-gradient(135deg,#EC4899,#F43F5E)", icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>) },
-          { label: "Today's Spend", value: todayExpenseTotal > 0 ? `$${todayExpenseTotal.toFixed(0)}` : "$0", gradient: "linear-gradient(135deg,#F97316,#EAB308)", icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7" x2="12" y2="17"/><path d="M15 9a3 3 0 00-6 0c0 2 6 2 6 4a3 3 0 01-6 0"/></svg>) },
+          { label: "Active Reminders", value: reminders.length, gradient: "linear-gradient(135deg,#8B5CF6,#6366F1)", icon: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5"/><path d="M9 17a3 3 0 006 0"/></svg>) },
         ] as { label: string; value: string | number; gradient: string; icon: React.ReactNode }[]).map(({ label, value, gradient, icon }) => (
           <div key={label} style={{ background: "#FFFFFF", borderRadius: "20px", padding: "1.375rem", boxShadow: "0 2px 16px rgba(0,0,0,0.06)", display: "flex", alignItems: "center", gap: "1rem" }}>
             <div style={{ width: "46px", height: "46px", borderRadius: "14px", background: gradient, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{icon}</div>
@@ -124,6 +135,38 @@ export function HomeTab({ firstName, kids, events, pendingTasks, onAddEvent, onA
             Schedule →
           </button>
         </div>
+      )}
+
+      {reminders.length > 0 && (
+        <section style={{ ...sectionCard, marginBottom: "1.5rem" }}>
+          <SectionHeader title="Reminders" accent="#8B5CF6" />
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+            {reminders.slice(0, 4).map((reminder) => {
+              const remindDate = new Date(reminder.remind_at)
+              const when = remindDate.toLocaleString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })
+              return (
+                <div key={reminder.id} style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start", padding: "0.75rem 0.875rem", borderRadius: "12px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.16)" }}>
+                  <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: "linear-gradient(135deg,#8B5CF6,#6366F1)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>⏰</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>{reminder.title}</div>
+                    <div style={{ fontSize: "0.7rem", color: "#8B5CF6", fontWeight: 600, marginTop: "0.15rem" }}>{when}</div>
+                    {reminder.note && <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.25rem", lineHeight: 1.5 }}>{reminder.note}</div>}
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                      <button onClick={() => void snoozeTomorrow(reminder)} style={{ borderRadius: "8px", border: "1px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.08)", color: "#6366F1", fontSize: "0.7rem", fontWeight: 600, padding: "0.25rem 0.55rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Snooze 1 day</button>
+                      <button onClick={() => void onDismissReminder(reminder.id)} style={{ borderRadius: "8px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "var(--muted)", fontSize: "0.7rem", fontWeight: 600, padding: "0.25rem 0.55rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Dismiss</button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "2rem" }}>
@@ -163,7 +206,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, onAddEvent, onA
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {pendingTasks.slice(0, 6).map((t) => <TaskRow key={t.id} task={t} onToggle={onToggleTask} onDelete={onDeleteTask} />)}
+              {pendingTasks.slice(0, 6).map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} />)}
               {pendingTasks.length > 6 && <p style={{ fontSize: "0.75rem", color: "var(--muted)", textAlign: "center" }}>+{pendingTasks.length - 6} more in Tasks</p>}
             </div>
           )}

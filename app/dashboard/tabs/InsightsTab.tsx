@@ -1,37 +1,76 @@
 "use client"
 import { useState } from "react"
 import { signOut } from "next-auth/react"
-import type { ScannedEventRow, KidRow } from "../types"
-import { todayStr, fmtTime } from "../lib/date"
-import { addDays } from "../lib/date"
+import type { ScannedEventRow } from "../types"
+import { todayStr, fmtTime, addDays } from "../lib/date"
 import { EVENT_TYPE_ICON, EVENT_TYPE_LABEL } from "../lib/events"
 import { INSIGHT_CATEGORIES, sortEvents, insightsDaysUntil, insightsFmtDate } from "../lib/insights"
 import { savePillStyle, sectionCard } from "../styles"
 import { Empty } from "../components/shared/Empty"
 
-function EventCard({ ev, showType, today, isAddedCal, isAddedTask, onAddCal, onAddTask }: {
-  ev: ScannedEventRow; showType?: boolean; today: string
-  isAddedCal?: boolean; isAddedTask?: boolean
-  onAddCal?: () => Promise<void>; onAddTask?: () => Promise<void>
+function EventCard({
+  ev,
+  showType,
+  today,
+  isAddedCal,
+  isAddedTask,
+  isReminderAdded,
+  onAddCal,
+  onAddTask,
+  onAddReminder,
+}: {
+  ev: ScannedEventRow
+  showType?: boolean
+  today: string
+  isAddedCal?: boolean
+  isAddedTask?: boolean
+  isReminderAdded?: boolean
+  onAddCal?: () => Promise<void>
+  onAddTask?: () => Promise<void>
+  onAddReminder?: () => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [adding, setAdding] = useState<"cal" | "task" | null>(null)
+  const [adding, setAdding] = useState<"cal" | "task" | "reminder" | null>(null)
 
   async function doAddCal(e: { stopPropagation(): void }) {
-    e.stopPropagation(); if (!onAddCal) return
-    setAdding("cal"); await onAddCal(); setAdding(null)
+    e.stopPropagation()
+    if (!onAddCal) return
+    setAdding("cal")
+    await onAddCal()
+    setAdding(null)
   }
+
   async function doAddTask(e: { stopPropagation(): void }) {
-    e.stopPropagation(); if (!onAddTask) return
-    setAdding("task"); await onAddTask(); setAdding(null)
+    e.stopPropagation()
+    if (!onAddTask) return
+    setAdding("task")
+    await onAddTask()
+    setAdding(null)
   }
+
+  async function doAddReminder(e: { stopPropagation(): void }) {
+    e.stopPropagation()
+    if (!onAddReminder) return
+    setAdding("reminder")
+    await onAddReminder()
+    setAdding(null)
+  }
+
   const dateStr = ev.event_date ? String(ev.event_date).slice(0, 10) : null
   const isUpcoming = !!dateStr && dateStr >= today
   const countdown = dateStr && isUpcoming ? insightsDaysUntil(dateStr, today) : null
+
   return (
     <div
       onClick={() => setExpanded((v) => !v)}
-      style={{ background: expanded ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.03)", border: `1px solid ${ev.urgency === "high" ? "rgba(248,113,113,0.3)" : expanded ? "rgba(99,102,241,0.4)" : "var(--border)"}`, borderRadius: "12px", padding: "0.875rem 1rem", cursor: "pointer", transition: "all 0.15s" }}
+      style={{
+        background: expanded ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.03)",
+        border: `1px solid ${ev.urgency === "high" ? "rgba(248,113,113,0.3)" : expanded ? "rgba(99,102,241,0.4)" : "var(--border)"}`,
+        borderRadius: "12px",
+        padding: "0.875rem 1rem",
+        cursor: "pointer",
+        transition: "all 0.15s",
+      }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
         <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>{EVENT_TYPE_ICON[ev.event_type] ?? "📧"}</span>
@@ -44,22 +83,27 @@ function EventCard({ ev, showType, today, isAddedCal, isAddedTask, onAddCal, onA
             {countdown && <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "0.05rem 0.4rem", borderRadius: "20px", background: `${countdown.color}22`, color: countdown.color, border: `1px solid ${countdown.color}44`, marginLeft: "auto" }}>{countdown.label}</span>}
             <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--muted)", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
           </div>
+
           {dateStr && (
             <p style={{ fontSize: "0.72rem", color: isUpcoming ? "#fbbf24" : "var(--muted)", marginBottom: "0.2rem" }}>
               📆 {insightsFmtDate(dateStr)}{ev.start_time ? ` · ${fmtTime(ev.start_time)}` : ""}{ev.end_time ? ` – ${fmtTime(ev.end_time)}` : ""}
             </p>
           )}
+
           {ev.special_instructions && (
             <div style={{ fontSize: "0.72rem", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: "6px", padding: "0.25rem 0.5rem", margin: "0.25rem 0", color: "#fbbf24" }}>⚡ {ev.special_instructions}</div>
           )}
+
           {(ev.event_type === "subscription" || ev.event_type === "invoice" || ev.event_type === "bill") && (
             <p style={{ fontSize: "0.72rem", color: "#818cf8", marginTop: "0.2rem" }}>
               {ev.vendor ?? ev.organization_name ?? ""}{ev.amount != null ? ` · $${Number(ev.amount).toFixed(2)}` : ""}{ev.recurrence ? ` / ${ev.recurrence === "one_time" ? "once" : ev.recurrence}` : ""}
             </p>
           )}
+
           {!dateStr && ev.event_type !== "subscription" && ev.event_type !== "invoice" && ev.event_type !== "bill" && !expanded && (
             <p style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.15rem" }}>{(ev.snippet ?? "").slice(0, 120)}{(ev.snippet ?? "").length > 120 ? "…" : ""}</p>
           )}
+
           {expanded && (
             <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
               {ev.organization_name && (
@@ -78,7 +122,8 @@ function EventCard({ ev, showType, today, isAddedCal, isAddedTask, onAddCal, onA
           )}
         </div>
       </div>
-      <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: "0.375rem", marginTop: "0.625rem", paddingTop: "0.5rem", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+
+      <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: "0.375rem", marginTop: "0.625rem", paddingTop: "0.5rem", borderTop: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
         {ev.event_date && (
           <button onClick={doAddCal} disabled={!!isAddedCal || adding !== null} style={{ fontSize: "0.68rem", padding: "0.2rem 0.625rem", borderRadius: "6px", border: `1px solid ${isAddedCal ? "rgba(52,211,153,0.4)" : "rgba(99,102,241,0.3)"}`, background: isAddedCal ? "rgba(52,211,153,0.08)" : "none", color: isAddedCal ? "#34d399" : "#818cf8", cursor: isAddedCal || adding !== null ? "default" : "pointer", fontFamily: "'Inter',sans-serif", transition: "all 0.15s", fontWeight: 600 }}>
             {isAddedCal ? "✓ In Calendar" : adding === "cal" ? "Adding…" : "+ Calendar"}
@@ -87,6 +132,11 @@ function EventCard({ ev, showType, today, isAddedCal, isAddedTask, onAddCal, onA
         <button onClick={doAddTask} disabled={!!isAddedTask || adding !== null} style={{ fontSize: "0.68rem", padding: "0.2rem 0.625rem", borderRadius: "6px", border: `1px solid ${isAddedTask ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.14)"}`, background: isAddedTask ? "rgba(52,211,153,0.08)" : "none", color: isAddedTask ? "#34d399" : "var(--muted)", cursor: isAddedTask || adding !== null ? "default" : "pointer", fontFamily: "'Inter',sans-serif", transition: "all 0.15s", fontWeight: 500 }}>
           {isAddedTask ? "✓ Reminder" : adding === "task" ? "Adding…" : "+ Reminder"}
         </button>
+        {onAddReminder && (
+          <button onClick={doAddReminder} disabled={!!isReminderAdded || adding !== null} style={{ fontSize: "0.68rem", padding: "0.2rem 0.625rem", borderRadius: "6px", border: `1px solid ${isReminderAdded ? "rgba(139,92,246,0.4)" : "rgba(139,92,246,0.24)"}`, background: isReminderAdded ? "rgba(139,92,246,0.08)" : "none", color: "#8B5CF6", cursor: isReminderAdded || adding !== null ? "default" : "pointer", fontFamily: "'Inter',sans-serif", transition: "all 0.15s", fontWeight: 600 }}>
+            {isReminderAdded ? "✓ Remind later" : adding === "reminder" ? "Adding…" : "⏰ Remind me"}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -104,15 +154,14 @@ function InsightsSectionHeader({ icon, title, count, accent }: { icon: string; t
 
 interface Props {
   scannedEvents: ScannedEventRow[]
-  signedUpAt: string
   provider: string
   onRefresh: () => Promise<{ error?: string }>
-  kids: KidRow[]
   onAddEvent: (title: string, date: string, time: string | null) => Promise<boolean>
-  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string) => Promise<boolean>
+  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
+  onAddReminder: (data: { source_type: "scanned_event"; source_id: string; title: string; note?: string | null; remind_at: string }) => Promise<boolean>
 }
 
-export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, onRefresh, kids: _kids, onAddEvent, onAddTask }: Props) {
+export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, onAddTask, onAddReminder }: Props) {
   const [section, setSection] = useState<string>("dashboard")
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
   const [refreshing, setRefreshing] = useState(false)
@@ -120,9 +169,11 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
   const [scanError, setScanError] = useState<string | null>(null)
   const [addedToCalendar, setAddedToCalendar] = useState<Set<string>>(new Set())
   const [addedAsTask, setAddedAsTask] = useState<Set<string>>(new Set())
+  const [addedAsReminder, setAddedAsReminder] = useState<Set<string>>(new Set())
 
   async function handleRefresh() {
-    setRefreshing(true); setScanError(null)
+    setRefreshing(true)
+    setScanError(null)
     const result = await onRefresh()
     if (result.error) setScanError(result.error)
     else setLastRefreshed(new Date().toLocaleTimeString())
@@ -131,12 +182,31 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
 
   async function handleAddToCalendar(ev: ScannedEventRow): Promise<void> {
     const ok = await onAddEvent(ev.calendar_title ?? ev.title, String(ev.event_date ?? "").slice(0, 10), ev.start_time ?? null)
-    if (ok) setAddedToCalendar((prev) => { const s = new Set(prev); s.add(ev.id); return s })
+    if (ok) setAddedToCalendar((prev) => new Set(prev).add(ev.id))
   }
 
   async function handleAddAsTask(ev: ScannedEventRow): Promise<void> {
     const ok = await onAddTask(ev.calendar_title ?? ev.title)
-    if (ok) setAddedAsTask((prev) => { const s = new Set(prev); s.add(ev.id); return s })
+    if (ok) setAddedAsTask((prev) => new Set(prev).add(ev.id))
+  }
+
+  async function handleAddReminder(ev: ScannedEventRow): Promise<void> {
+    const remindAt = ev.event_date
+      ? new Date(`${String(ev.event_date).slice(0, 10)}T09:00:00`).toISOString()
+      : (() => {
+          const next = new Date()
+          next.setDate(next.getDate() + 1)
+          next.setHours(9, 0, 0, 0)
+          return next.toISOString()
+        })()
+    const ok = await onAddReminder({
+      source_type: "scanned_event",
+      source_id: ev.id,
+      title: ev.calendar_title ?? ev.title,
+      note: ev.special_instructions ?? ev.snippet ?? null,
+      remind_at: remindAt,
+    })
+    if (ok) setAddedAsReminder((prev) => new Set(prev).add(ev.id))
   }
 
   const today = todayStr()
@@ -145,30 +215,36 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
   const all = scannedEvents
   const actionNeeded = sortEvents(all.filter((e) => e.urgency === "high" || !!e.special_instructions), sortOrder)
   const thisWeek = all
-    .filter((e) => { const d = e.event_date ? String(e.event_date).slice(0, 10) : null; return d && d >= today && d <= in7 })
+    .filter((e) => {
+      const d = e.event_date ? String(e.event_date).slice(0, 10) : null
+      return d && d >= today && d <= in7
+    })
     .sort((a, b) => String(a.event_date ?? "").localeCompare(String(b.event_date ?? "")))
 
-  const categoryData = INSIGHT_CATEGORIES.map((cat) => ({
-    ...cat,
-    events: sortEvents(all.filter((e) => cat.types.includes(e.event_type)), sortOrder),
-  })).filter((c) => c.events.length > 0)
+  const categoryData = INSIGHT_CATEGORIES
+    .map((cat) => ({
+      ...cat,
+      events: sortEvents(all.filter((e) => cat.types.includes(e.event_type)), sortOrder),
+    }))
+    .filter((c) => c.events.length > 0)
 
   const subscriptions = categoryData.find((c) => c.id === "subscriptions")?.events ?? []
-  const activities    = categoryData.find((c) => c.id === "activities")?.events ?? []
-  const monthlyTotal  = subscriptions.filter((e) => e.recurrence === "monthly").reduce((s, e) => s + Number(e.amount ?? 0), 0)
-  const annualTotal   = subscriptions.filter((e) => e.recurrence === "annual").reduce((s, e) => s + Number(e.amount ?? 0), 0)
+  const activities = categoryData.find((c) => c.id === "activities")?.events ?? []
+  const monthlyTotal = subscriptions.filter((e) => e.recurrence === "monthly").reduce((sum, e) => sum + Number(e.amount ?? 0), 0)
+  const annualTotal = subscriptions.filter((e) => e.recurrence === "annual").reduce((sum, e) => sum + Number(e.amount ?? 0), 0)
 
   const errorBanner = scanError === "token_expired"
     ? <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: "12px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#fbbf24" }}>⚠ Google session expired — <button onClick={() => signOut({ callbackUrl: "/" })} style={{ background: "none", border: "none", color: "#fbbf24", textDecoration: "underline", cursor: "pointer", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", padding: 0 }}>sign out and back in</button> to reconnect.</div>
     : scanError
-    ? <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "12px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#f87171" }}>⚠ Scan failed — please try again.</div>
-    : null
+      ? <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "12px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#f87171" }}>⚠ Scan failed — please try again.</div>
+      : null
 
-  const activeSectionEvents = section === "dashboard" ? []
-    : section === "all" ? sortEvents(all, sortOrder)
-    : section === "thisweek" ? sortEvents(thisWeek, sortOrder)
-    : section === "action" ? sortEvents(actionNeeded, sortOrder)
-    : categoryData.find((c) => c.id === section)?.events ?? []
+  const activeSectionEvents =
+    section === "dashboard" ? []
+      : section === "all" ? sortEvents(all, sortOrder)
+      : section === "thisweek" ? sortEvents(thisWeek, sortOrder)
+      : section === "action" ? sortEvents(actionNeeded, sortOrder)
+      : categoryData.find((c) => c.id === section)?.events ?? []
 
   return (
     <>
@@ -195,11 +271,12 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
       {errorBanner}
 
       <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        {[{ id: "dashboard", label: "Dashboard", icon: "🏠", count: undefined },
+        {[
+          { id: "dashboard", label: "Dashboard", icon: "🏠", count: undefined },
           { id: "thisweek", label: "This Week", icon: "📅", count: thisWeek.length },
           { id: "action", label: "Action Needed", icon: "⚡", count: actionNeeded.length },
           ...categoryData.map((c) => ({ id: c.id, label: c.label, icon: c.icon, count: c.events.length })),
-          { id: "all", label: "All Emails", icon: "📧", count: all.length }
+          { id: "all", label: "All Emails", icon: "📧", count: all.length },
         ].map(({ id, label, icon, count }) => (
           <button key={id} onClick={() => setSection(id)} style={{ padding: "0.3rem 0.75rem", borderRadius: "20px", border: "none", cursor: "pointer", background: section === id ? "#fbbf24" : "rgba(255,255,255,0.06)", color: section === id ? "#000" : "var(--muted)", fontSize: "0.75rem", fontWeight: section === id ? 700 : 400, fontFamily: "'Inter',sans-serif", display: "flex", alignItems: "center", gap: "0.3rem" }}>
             {icon} {label}
@@ -234,8 +311,7 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
             ].map(({ label, value, icon, color, sub, sectionId }) => (
               <div key={label} onClick={() => setSection(sectionId)} style={{ background: `${color}0d`, border: `1px solid ${color}33`, borderRadius: "14px", padding: "1rem", textAlign: "center", cursor: "pointer", transition: "border-color 0.15s" }}
                 onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = color}
-                onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = `${color}33`}
-              >
+                onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = `${color}33`}>
                 <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>{icon}</div>
                 <div style={{ fontSize: "1.4rem", fontWeight: 800, color, fontFamily: "'Outfit',sans-serif" }}>{value}</div>
                 <div style={{ fontSize: "0.65rem", color: "var(--muted)", marginTop: "0.15rem" }}>{sub}</div>
@@ -250,9 +326,13 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {actionNeeded.slice(0, 5).map((ev) => (
                   <EventCard key={ev.id} ev={ev} showType today={today}
-                    isAddedCal={addedToCalendar.has(ev.id)} isAddedTask={addedAsTask.has(ev.id)}
+                    isAddedCal={addedToCalendar.has(ev.id)}
+                    isAddedTask={addedAsTask.has(ev.id)}
+                    isReminderAdded={addedAsReminder.has(ev.id)}
                     onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
-                    onAddTask={() => handleAddAsTask(ev)} />
+                    onAddTask={() => handleAddAsTask(ev)}
+                    onAddReminder={() => handleAddReminder(ev)}
+                  />
                 ))}
               </div>
             </div>
@@ -264,9 +344,13 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {thisWeek.map((ev) => (
                   <EventCard key={ev.id} ev={ev} showType today={today}
-                    isAddedCal={addedToCalendar.has(ev.id)} isAddedTask={addedAsTask.has(ev.id)}
+                    isAddedCal={addedToCalendar.has(ev.id)}
+                    isAddedTask={addedAsTask.has(ev.id)}
+                    isReminderAdded={addedAsReminder.has(ev.id)}
                     onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
-                    onAddTask={() => handleAddAsTask(ev)} />
+                    onAddTask={() => handleAddAsTask(ev)}
+                    onAddReminder={() => handleAddReminder(ev)}
+                  />
                 ))}
               </div>
             </div>
@@ -287,9 +371,13 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {preview.map((ev) => (
                     <EventCard key={ev.id} ev={ev} today={today}
-                      isAddedCal={addedToCalendar.has(ev.id)} isAddedTask={addedAsTask.has(ev.id)}
+                      isAddedCal={addedToCalendar.has(ev.id)}
+                      isAddedTask={addedAsTask.has(ev.id)}
+                      isReminderAdded={addedAsReminder.has(ev.id)}
                       onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
-                      onAddTask={() => handleAddAsTask(ev)} />
+                      onAddTask={() => handleAddAsTask(ev)}
+                      onAddReminder={() => handleAddReminder(ev)}
+                    />
                   ))}
                   {remaining > 0 && <button onClick={() => setSection(cat.id)} style={{ background: "none", border: "none", color: cat.accent, cursor: "pointer", fontSize: "0.78rem", textAlign: "left", padding: "0.25rem 0" }}>+ {remaining} more →</button>}
                 </div>
@@ -303,11 +391,14 @@ export function InsightsTab({ scannedEvents, signedUpAt: _signedUpAt, provider, 
             ? <Empty text={`No ${section} emails found`} />
             : activeSectionEvents.map((ev) => (
               <EventCard key={ev.id} ev={ev} showType today={today}
-                isAddedCal={addedToCalendar.has(ev.id)} isAddedTask={addedAsTask.has(ev.id)}
+                isAddedCal={addedToCalendar.has(ev.id)}
+                isAddedTask={addedAsTask.has(ev.id)}
+                isReminderAdded={addedAsReminder.has(ev.id)}
                 onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
-                onAddTask={() => handleAddAsTask(ev)} />
-            ))
-          }
+                onAddTask={() => handleAddAsTask(ev)}
+                onAddReminder={() => handleAddReminder(ev)}
+              />
+            ))}
         </div>
       )}
     </>

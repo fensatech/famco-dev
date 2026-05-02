@@ -1,5 +1,7 @@
 import { getPool } from "./supabase"
 import type { Profile, Kid, FamilyFact, RawFact } from "@/types"
+import type { FamilyInvite, Reminder } from "@/types"
+import { randomUUID } from "node:crypto"
 
 export async function createProfile(data: {
   id: string
@@ -389,6 +391,8 @@ export interface Task {
   due_date: string | null
   due_time: string | null
   notes: string | null
+  assignee_name: string | null
+  recurrence: "daily" | "weekly" | "monthly" | null
   completed: boolean
   completed_at: string | null
   created_at: string
@@ -408,13 +412,18 @@ export async function createTask(profileId: string, data: {
   due_date?: string | null
   due_time?: string | null
   notes?: string | null
+  assignee_name?: string | null
+  recurrence?: "daily" | "weekly" | "monthly" | null
 }): Promise<Task> {
   const pool = getPool()
   const { rows } = await pool.query<Task>(
-    `INSERT INTO tasks (profile_id, title, due_date, due_time, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [profileId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null]
+    `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [profileId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null, data.assignee_name ?? null, data.recurrence ?? null]
   )
-  return rows[0]
+  const task = rows[0]
+  await syncTaskReminder(task)
+  return task
 }
 
 export async function updateTask(id: string, profileId: string, data: {
@@ -422,31 +431,257 @@ export async function updateTask(id: string, profileId: string, data: {
   due_date: string | null
   due_time: string | null
   notes: string | null
+  assignee_name: string | null
+  recurrence: "daily" | "weekly" | "monthly" | null
 }): Promise<Task | null> {
   const pool = getPool()
   const { rows } = await pool.query<Task>(
-    `UPDATE tasks SET title = $3, due_date = $4, due_time = $5, notes = $6 WHERE id = $1 AND profile_id = $2 RETURNING *`,
-    [id, profileId, data.title, data.due_date, data.due_time, data.notes]
+    `UPDATE tasks SET title = $3, due_date = $4, due_time = $5, notes = $6, assignee_name = $7, recurrence = $8
+     WHERE id = $1 AND profile_id = $2 RETURNING *`,
+    [id, profileId, data.title, data.due_date, data.due_time, data.notes, data.assignee_name, data.recurrence]
   )
-  return rows[0] ?? null
+  const task = rows[0] ?? null
+  if (task) await syncTaskReminder(task)
+  return task
 }
 
-export async function toggleTask(id: string, profileId: string, completed: boolean): Promise<Task | null> {
+export async function toggleTask(id: string, profileId: string, completed: boolean): Promise<{ task: Task | null; spawnedTask: Task | null }> {
   const pool = getPool()
-  const { rows } = await pool.query<Task>(
-    `UPDATE tasks SET completed = $3, completed_at = $4 WHERE id = $1 AND profile_id = $2 RETURNING *`,
-    [id, profileId, completed, completed ? new Date().toISOString() : null]
-  )
-  return rows[0] ?? null
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    const { rows } = await client.query<Task>(
+      `UPDATE tasks SET completed = $3, completed_at = $4 WHERE id = $1 AND profile_id = $2 RETURNING *`,
+      [id, profileId, completed, completed ? new Date().toISOString() : null]
+    )
+    const task = rows[0] ?? null
+    let spawnedTask: Task | null = null
+    if (!task) {
+      await client.query("ROLLBACK")
+      return { task: null, spawnedTask: null }
+    }
+
+    if (completed) {
+      await syncTaskReminder(task, client)
+      if (task.recurrence && task.due_date) {
+        const nextDueDate = addRecurringDate(task.due_date, task.recurrence)
+        const { rows: spawnedRows } = await client.query<Task>(
+          `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [profileId, task.title, nextDueDate, task.due_time, task.notes, task.assignee_name, task.recurrence]
+        )
+        spawnedTask = spawnedRows[0] ?? null
+        if (spawnedTask) await syncTaskReminder(spawnedTask, client)
+      }
+    } else {
+      await syncTaskReminder(task, client)
+    }
+
+    await client.query("COMMIT")
+    return { task, spawnedTask }
+  } catch (err) {
+    await client.query("ROLLBACK")
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function deleteTask(id: string, profileId: string) {
   const pool = getPool()
   await pool.query(`DELETE FROM tasks WHERE id = $1 AND profile_id = $2`, [id, profileId])
+  await deleteReminderBySource(profileId, "task", id)
 }
 
 function isDateValue(value: unknown): value is Date {
   return value instanceof Date
+}
+
+function addRecurringDate(dueDate: string, recurrence: "daily" | "weekly" | "monthly"): string {
+  const next = new Date(`${dueDate}T12:00:00Z`)
+  if (recurrence === "daily") next.setUTCDate(next.getUTCDate() + 1)
+  if (recurrence === "weekly") next.setUTCDate(next.getUTCDate() + 7)
+  if (recurrence === "monthly") next.setUTCMonth(next.getUTCMonth() + 1)
+  return next.toISOString().slice(0, 10)
+}
+
+function taskReminderAt(task: Pick<Task, "due_date" | "due_time">): string | null {
+  if (!task.due_date) return null
+  return task.due_time
+    ? `${task.due_date}T${task.due_time}:00`
+    : `${task.due_date}T09:00:00`
+}
+
+type Queryable = {
+  query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>
+}
+
+async function syncTaskReminder(task: Task, clientArg?: Queryable): Promise<void> {
+  const pool = getPool()
+  const client = clientArg ?? pool
+  if (!task.due_date || task.completed) {
+    await client.query(
+      `DELETE FROM reminders WHERE profile_id = $1 AND source_type = 'task' AND source_id = $2`,
+      [task.profile_id, task.id]
+    )
+    return
+  }
+
+  const remindAt = taskReminderAt(task)
+  if (!remindAt) return
+  const title = task.assignee_name
+    ? `${task.title} · ${task.assignee_name}`
+    : task.title
+
+  await client.query(
+    `INSERT INTO reminders (profile_id, source_type, source_id, title, note, remind_at, status, updated_at)
+     VALUES ($1,'task',$2,$3,$4,$5,'pending',NOW())
+     ON CONFLICT (profile_id, source_type, source_id) DO UPDATE SET
+       title = EXCLUDED.title,
+       note = EXCLUDED.note,
+       remind_at = EXCLUDED.remind_at,
+       status = 'pending',
+       updated_at = NOW()`,
+    [task.profile_id, task.id, title, task.notes ?? null, remindAt]
+  )
+}
+
+async function deleteReminderBySource(profileId: string, sourceType: Reminder["source_type"], sourceId: string) {
+  const pool = getPool()
+  await pool.query(
+    `DELETE FROM reminders WHERE profile_id = $1 AND source_type = $2 AND source_id = $3`,
+    [profileId, sourceType, sourceId]
+  )
+}
+
+export async function getReminders(profileId: string): Promise<Reminder[]> {
+  const pool = getPool()
+  const { rows } = await pool.query<Reminder & { remind_at: string | Date; created_at: string | Date; updated_at: string | Date }>(
+    `SELECT * FROM reminders
+     WHERE profile_id = $1 AND status = 'pending'
+     ORDER BY remind_at ASC, created_at DESC`,
+    [profileId]
+  )
+  return rows.map((row) => ({
+    ...row,
+    remind_at: isDateValue(row.remind_at) ? row.remind_at.toISOString() : String(row.remind_at),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }))
+}
+
+export async function createReminder(profileId: string, data: {
+  source_type: Reminder["source_type"]
+  source_id?: string | null
+  title: string
+  note?: string | null
+  remind_at: string
+}): Promise<Reminder> {
+  const pool = getPool()
+  const { rows } = await pool.query<Reminder>(
+    `INSERT INTO reminders (profile_id, source_type, source_id, title, note, remind_at)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (profile_id, source_type, source_id) DO UPDATE SET
+       title = EXCLUDED.title,
+       note = EXCLUDED.note,
+       remind_at = EXCLUDED.remind_at,
+       status = 'pending',
+       updated_at = NOW()
+     RETURNING *`,
+    [profileId, data.source_type, data.source_id ?? null, data.title, data.note ?? null, data.remind_at]
+  )
+  const reminder = rows[0]
+  return {
+    ...reminder,
+    remind_at: String(reminder.remind_at),
+    created_at: String(reminder.created_at),
+    updated_at: String(reminder.updated_at),
+  }
+}
+
+export async function dismissReminder(id: string, profileId: string): Promise<void> {
+  const pool = getPool()
+  await pool.query(
+    `UPDATE reminders SET status = 'dismissed', updated_at = NOW() WHERE id = $1 AND profile_id = $2`,
+    [id, profileId]
+  )
+}
+
+export async function snoozeReminder(id: string, profileId: string, remindAt: string): Promise<Reminder | null> {
+  const pool = getPool()
+  const { rows } = await pool.query<Reminder>(
+    `UPDATE reminders SET remind_at = $3, status = 'pending', updated_at = NOW()
+     WHERE id = $1 AND profile_id = $2 RETURNING *`,
+    [id, profileId, remindAt]
+  )
+  const reminder = rows[0] ?? null
+  return reminder ? {
+    ...reminder,
+    remind_at: String(reminder.remind_at),
+    created_at: String(reminder.created_at),
+    updated_at: String(reminder.updated_at),
+  } : null
+}
+
+export async function getFamilyInvites(profileId: string): Promise<FamilyInvite[]> {
+  const pool = getPool()
+  const { rows } = await pool.query<FamilyInvite & {
+    accepted_at: string | Date | null
+    expires_at: string | Date
+    created_at: string | Date
+  }>(
+    `SELECT * FROM family_invites WHERE profile_id = $1 ORDER BY created_at DESC`,
+    [profileId]
+  )
+  return rows.map((row) => ({
+    ...row,
+    accepted_at: row.accepted_at ? (isDateValue(row.accepted_at) ? row.accepted_at.toISOString() : String(row.accepted_at)) : null,
+    expires_at: isDateValue(row.expires_at) ? row.expires_at.toISOString() : String(row.expires_at),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+  }))
+}
+
+export async function createFamilyInvite(profileId: string, data: {
+  invitee_email: string
+  invited_name?: string | null
+  relation: FamilyInvite["relation"]
+  role: FamilyInvite["role"]
+}): Promise<FamilyInvite> {
+  const pool = getPool()
+  const token = randomUUID()
+  const { rows } = await pool.query<FamilyInvite>(
+    `INSERT INTO family_invites (profile_id, invitee_email, invited_name, relation, role, token)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     RETURNING *`,
+    [profileId, data.invitee_email.toLowerCase(), data.invited_name ?? null, data.relation, data.role, token]
+  )
+  const invite = rows[0]
+  return {
+    ...invite,
+    accepted_at: invite.accepted_at ? String(invite.accepted_at) : null,
+    expires_at: String(invite.expires_at),
+    created_at: String(invite.created_at),
+  }
+}
+
+export async function revokeFamilyInvite(profileId: string, inviteId: string): Promise<void> {
+  const pool = getPool()
+  await pool.query(
+    `UPDATE family_invites SET status = 'revoked' WHERE id = $1 AND profile_id = $2`,
+    [inviteId, profileId]
+  )
+}
+
+export async function acceptPendingFamilyInvites(email: string, acceptedByProfileId: string): Promise<void> {
+  const pool = getPool()
+  await pool.query(
+    `UPDATE family_invites
+     SET status = 'accepted', accepted_at = NOW(), accepted_by_profile_id = $2
+     WHERE LOWER(invitee_email) = LOWER($1)
+       AND status = 'pending'
+       AND expires_at > NOW()`,
+    [email, acceptedByProfileId]
+  )
 }
 
 export interface Expense {

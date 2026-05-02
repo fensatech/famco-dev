@@ -1,12 +1,12 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
-import { getProfile, getKids, getEvents, getTasks, getScannedEvents, getFamilyFacts, getPets } from "@/lib/db"
+import { getProfile, getKids, getEvents, getTasks, getScannedEvents, getFamilyFacts, getPets, getFamilyInvites, getReminders } from "@/lib/db"
 import { DashboardShell } from "./DashboardShell"
 
 export default async function DashboardPage() {
   const session = await auth()
   if (!session?.profileId) redirect("/")
-  const [profile, kids, allEvents, tasks, scannedEvents, facts, pets] = await Promise.all([
+  const [profile, kids, allEvents, tasks, scannedEvents, facts, pets, invites, reminders] = await Promise.all([
     getProfile(session.profileId),
     getKids(session.profileId),
     getEvents(session.profileId),
@@ -14,6 +14,8 @@ export default async function DashboardPage() {
     getScannedEvents(session.profileId),
     getFamilyFacts(session.profileId),
     getPets(session.profileId).catch(() => []),
+    getFamilyInvites(session.profileId).catch(() => []),
+    getReminders(session.profileId).catch(() => []),
   ])
   if (!profile?.onboarding_completed) redirect("/onboarding")
   return (
@@ -53,6 +55,8 @@ export default async function DashboardPage() {
       tasks={tasks}
       scannedEvents={scannedEvents}
       facts={facts}
+      invites={invites}
+      reminders={reminders}
     />
   )
 }

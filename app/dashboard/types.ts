@@ -1,5 +1,5 @@
 import type { Event, Task, CoParentingSchedule, CoParentingOverride } from "@/lib/db"
-import type { FamilyFact } from "@/types"
+import type { FamilyFact, FamilyInvite, Reminder } from "@/types"
 
 export type { CoParentingSchedule, CoParentingOverride }
 
@@ -54,6 +54,8 @@ export interface DashboardViewModel {
   tasks: Task[]
   scannedEvents: ScannedEventRow[]
   facts: FamilyFact[]
+  invites: FamilyInvite[]
+  reminders: Reminder[]
   provider: string
 }
 

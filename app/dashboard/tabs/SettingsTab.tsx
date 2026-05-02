@@ -1,6 +1,7 @@
 "use client"
 import { useState, useRef } from "react"
 import { FAMILY_TYPE_OPTIONS } from "@/types"
+import type { FamilyInvite } from "@/types"
 import type { ProfileData, KidRow, PetRow } from "../types"
 import { memberColor } from "../lib/events"
 import { inputSt, fieldLabelStyle, fieldRowStyle, savePillStyle } from "../styles"
@@ -168,9 +169,12 @@ interface Props {
   setKids: (k: KidRow[]) => void
   pets: PetRow[]
   setPets: (p: PetRow[]) => void
+  invites: FamilyInvite[]
+  onInvite: (data: { invitee_email: string; invited_name?: string; relation: string; role: string }) => Promise<boolean>
+  onRevokeInvite: (id: string) => Promise<boolean>
 }
 
-export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets }: Props) {
+export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets, invites, onInvite, onRevokeInvite }: Props) {
   const [draft, setDraft] = useState({
     firstName: initialProfile.firstName, lastName: initialProfile.lastName,
     phone: initialProfile.phone, familyType: initialProfile.familyType,
@@ -186,11 +190,34 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
   const [editPets, setEditPets] = useState<EditPet[]>(pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed ?? "", dob: p.dob ?? "" })))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [inviteDraft, setInviteDraft] = useState({ invited_name: "", invitee_email: "", relation: "family_member", role: "member" })
+  const [inviteSaving, setInviteSaving] = useState(false)
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
 
   const hasSpouse = draft.familyType !== "single_parent"
   function sf<K extends keyof typeof draft>(key: K, val: (typeof draft)[K]) { setDraft((p) => ({ ...p, [key]: val })) }
   function sk(i: number, key: keyof EditKid, val: string) { setEditKids((prev) => prev.map((k, idx) => idx === i ? { ...k, [key]: val } : k)) }
   function sp(i: number, key: keyof EditPet, val: string) { setEditPets((prev) => prev.map((p, idx) => idx === i ? { ...p, [key]: val } : p)) }
+
+  async function handleInvite() {
+    if (!inviteDraft.invitee_email.trim()) return
+    setInviteSaving(true)
+    const ok = await onInvite({
+      invitee_email: inviteDraft.invitee_email.trim(),
+      invited_name: inviteDraft.invited_name.trim() || undefined,
+      relation: inviteDraft.relation,
+      role: inviteDraft.role,
+    })
+    setInviteSaving(false)
+    if (ok) setInviteDraft({ invited_name: "", invitee_email: "", relation: "family_member", role: "member" })
+  }
+
+  async function copyInviteLink(invite: FamilyInvite) {
+    const origin = typeof window !== "undefined" ? window.location.origin : ""
+    await navigator.clipboard.writeText(`${origin}/?invite=${invite.token}`)
+    setCopiedInviteId(invite.id)
+    window.setTimeout(() => setCopiedInviteId(null), 2000)
+  }
 
   async function saveAll() {
     if (!draft.city.trim() || !draft.timezone) return
@@ -275,6 +302,72 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
             </div>
           )}
         </div>
+
+        <SettingsSection title="Household Access" icon="✉️" accent="#22c55e" bg="rgba(34,197,94,0.06)">
+          <p style={{ fontSize: "0.78rem", color: "var(--muted)", lineHeight: 1.6 }}>
+            Invite a partner, co-parent, or caregiver after signup. This keeps the dev portal lightweight while giving you a safe way to prepare shared household access.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.9fr 0.9fr auto", gap: "0.625rem", alignItems: "end" }}>
+            <div>
+              <label style={fieldLabelStyle}>Name</label>
+              <input style={{ ...inputSt, marginTop: "0.25rem" }} value={inviteDraft.invited_name} onChange={(e) => setInviteDraft((prev) => ({ ...prev, invited_name: e.target.value }))} placeholder="Jordan" />
+            </div>
+            <div>
+              <label style={fieldLabelStyle}>Email</label>
+              <input style={{ ...inputSt, marginTop: "0.25rem" }} value={inviteDraft.invitee_email} onChange={(e) => setInviteDraft((prev) => ({ ...prev, invitee_email: e.target.value }))} placeholder="name@email.com" />
+            </div>
+            <div>
+              <label style={fieldLabelStyle}>Relation</label>
+              <select style={{ ...inputSt, marginTop: "0.25rem" }} value={inviteDraft.relation} onChange={(e) => setInviteDraft((prev) => ({ ...prev, relation: e.target.value }))}>
+                <option value="partner">Partner</option>
+                <option value="co_parent">Co-parent</option>
+                <option value="family_member">Family member</option>
+                <option value="caregiver">Caregiver</option>
+              </select>
+            </div>
+            <div>
+              <label style={fieldLabelStyle}>Role</label>
+              <select style={{ ...inputSt, marginTop: "0.25rem" }} value={inviteDraft.role} onChange={(e) => setInviteDraft((prev) => ({ ...prev, role: e.target.value }))}>
+                <option value="member">Member</option>
+                <option value="adult">Adult</option>
+                <option value="co_parent">Co-parent</option>
+              </select>
+            </div>
+            <button onClick={() => void handleInvite()} disabled={inviteSaving || !inviteDraft.invitee_email.trim()} style={{ ...savePillStyle, alignSelf: "stretch", minWidth: "110px" }}>
+              {inviteSaving ? "Sending…" : "Invite"}
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+            {invites.length === 0 ? (
+              <div style={{ padding: "0.9rem 1rem", borderRadius: "12px", border: "1px dashed rgba(255,255,255,0.08)", color: "var(--muted)", fontSize: "0.76rem" }}>
+                No invitations yet. Start with your partner or co-parent, then expand the household later.
+              </div>
+            ) : invites.map((invite) => (
+              <div key={invite.id} style={{ display: "flex", gap: "0.75rem", alignItems: "center", padding: "0.85rem 1rem", borderRadius: "12px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>{invite.invited_name || invite.invitee_email}</span>
+                    <span style={{ fontSize: "0.66rem", padding: "0.08rem 0.42rem", borderRadius: "999px", background: invite.status === "accepted" ? "rgba(34,197,94,0.12)" : invite.status === "revoked" ? "rgba(248,113,113,0.12)" : "rgba(251,191,36,0.12)", color: invite.status === "accepted" ? "#22c55e" : invite.status === "revoked" ? "#f87171" : "#fbbf24", border: "1px solid rgba(255,255,255,0.08)", fontWeight: 700 }}>
+                      {invite.status}
+                    </span>
+                    <span style={{ fontSize: "0.65rem", color: "var(--muted)" }}>{invite.relation.replace("_", " ")} · {invite.role.replace("_", " ")}</span>
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.18rem" }}>{invite.invitee_email}</div>
+                </div>
+                {invite.status === "pending" && (
+                  <>
+                    <button onClick={() => void copyInviteLink(invite)} style={{ borderRadius: "8px", border: "1px solid rgba(34,197,94,0.25)", background: "rgba(34,197,94,0.08)", color: "#22c55e", fontSize: "0.72rem", fontWeight: 700, padding: "0.4rem 0.75rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+                      {copiedInviteId === invite.id ? "Copied" : "Copy link"}
+                    </button>
+                    <button onClick={() => void onRevokeInvite(invite.id)} style={{ borderRadius: "8px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.08)", color: "#f87171", fontSize: "0.72rem", fontWeight: 700, padding: "0.4rem 0.75rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+                      Revoke
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </SettingsSection>
 
         {/* Family Type */}
         <SettingsSection title="Family Type" icon="👨‍👩‍👧‍👦" accent="#60a5fa" bg="rgba(96,165,250,0.07)">

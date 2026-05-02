@@ -9,7 +9,8 @@ import { TaskRow } from "../components/shared/TaskRow"
 interface Props {
   pending: Task[]
   done: Task[]
-  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string) => Promise<boolean>
+  assigneeOptions: string[]
+  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
   onEditTask: (id: string, data: TaskEditData) => Promise<boolean>
   onToggleTask: (id: string, completed: boolean) => void
   onDeleteTask: (id: string) => void
@@ -17,15 +18,15 @@ interface Props {
   openSignal?: number
 }
 
-export function TasksTab({ pending, done, onAddTask, onEditTask, onToggleTask, onDeleteTask, saving, openSignal }: Props) {
+export function TasksTab({ pending, done, assigneeOptions, onAddTask, onEditTask, onToggleTask, onDeleteTask, saving, openSignal }: Props) {
   const [showAddTask, setShowAddTask] = useState(false)
 
   useEffect(() => {
     if (openSignal) { queueMicrotask(() => setShowAddTask(true)) }
   }, [openSignal])
 
-  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string) {
-    const ok = await onAddTask(title, dueDate, dueTime, notes)
+  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") {
+    const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence)
     if (ok) setShowAddTask(false)
   }
 
@@ -38,7 +39,7 @@ export function TasksTab({ pending, done, onAddTask, onEditTask, onToggleTask, o
         </div>
         <button onClick={() => setShowAddTask(true)} style={{ ...savePillStyle, flexShrink: 0 }}>+ Add task</button>
       </div>
-      {showAddTask && <AddTaskModal onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
+      {showAddTask && <AddTaskModal assigneeOptions={assigneeOptions} onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
       <div style={{ maxWidth: "600px" }}>
         {pending.length === 0 && done.length === 0 && (
           <div style={{ padding: "2.5rem 1rem", textAlign: "center", color: "var(--muted)", background: "rgba(255,255,255,0.02)", borderRadius: "14px", border: "1px dashed var(--border)" }}>
@@ -49,14 +50,14 @@ export function TasksTab({ pending, done, onAddTask, onEditTask, onToggleTask, o
         )}
         {pending.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1.5rem" }}>
-            {pending.map((t) => <TaskRow key={t.id} task={t} onToggle={onToggleTask} onDelete={onDeleteTask} onEdit={onEditTask} />)}
+              {pending.map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} onEdit={onEditTask} />)}
           </div>
         )}
         {done.length > 0 && (
           <>
             <p style={{ fontSize: "0.72rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>Completed</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {done.map((t) => <TaskRow key={t.id} task={t} onToggle={onToggleTask} onDelete={onDeleteTask} />)}
+              {done.map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} />)}
             </div>
           </>
         )}
