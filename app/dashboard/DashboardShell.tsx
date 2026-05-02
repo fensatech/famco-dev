@@ -173,7 +173,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
 
       {/* Main */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <TopBar tab={tab} />
+        <TopBar tab={tab} isMobile={isMobile} />
 
         <main style={{ flex: 1, padding: isMobile ? "1.25rem 1rem" : "2rem 2.5rem", paddingBottom: isMobile ? "5.5rem" : "5rem", overflowY: "auto" }}>
 
