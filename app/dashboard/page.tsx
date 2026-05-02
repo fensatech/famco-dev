@@ -1,12 +1,13 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
-import { getProfile, getKids, getEvents, getTasks, getScannedEvents, getFamilyFacts, getPets, getFamilyInvites, getReminders } from "@/lib/db"
+import { ensureRuntimeSchema, getProfile, getKids, getEvents, getTasks, getScannedEvents, getFamilyFacts, getPets, getFamilyInvites, getReminders } from "@/lib/db"
 import { DashboardShell } from "./DashboardShell"
 import packageJson from "../../package.json"
 
 export default async function DashboardPage() {
   const session = await auth()
   if (!session?.profileId) redirect("/")
+  await ensureRuntimeSchema().catch(() => {})
   const [profile, kids, allEvents, tasks, scannedEvents, facts, pets, invites, reminders] = await Promise.all([
     getProfile(session.profileId),
     getKids(session.profileId),

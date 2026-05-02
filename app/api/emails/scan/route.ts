@@ -5,7 +5,7 @@ import { scanOutlookEmails } from "@/lib/outlook"
 import {
   saveScannedEvents, saveScannedOrganizations,
   getKids, createEvent, getLastScanDate, getExistingMessageIds,
-  upsertFacts, getFamilyFacts, updateFactStatus, getScannedEvents, getProfile,
+  upsertFacts, getFamilyFacts, updateFactStatus, getScannedEvents, getProfile, ensureRuntimeSchema,
 } from "@/lib/db"
 import { seedFactsFromEvents, resolveConflicts, aiExtractFacts } from "@/lib/facts"
 import type { Kid } from "@/types"
@@ -39,6 +39,8 @@ export async function POST() {
   }
 
   try {
+    await ensureRuntimeSchema()
+
     const [kids, lastScanDate, existingIds, profile] = await Promise.all([
       getKids(session.profileId),
       getLastScanDate(session.profileId),

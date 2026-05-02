@@ -3,6 +3,120 @@ import type { Profile, Kid, FamilyFact, RawFact } from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
 
+let schemaEnsured = false
+let schemaEnsuring: Promise<void> | null = null
+
+export async function ensureRuntimeSchema() {
+  if (schemaEnsured) return
+  if (schemaEnsuring) return schemaEnsuring
+
+  const pool = getPool()
+  schemaEnsuring = (async () => {
+    await pool.query(`
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS first_name TEXT;
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS last_name TEXT;
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS school_name TEXT;
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS grade TEXT;
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS daycare_name TEXT;
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS daycare_address TEXT;
+
+      CREATE TABLE IF NOT EXISTS pets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        animal_type TEXT NOT NULL,
+        breed TEXT,
+        dob DATE,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_name TEXT;
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
+
+      ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS vendor TEXT;
+      ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS amount NUMERIC(10,2);
+      ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS recurrence TEXT;
+
+      ALTER TABLE scanned_events DROP CONSTRAINT IF EXISTS scanned_events_event_type_check;
+      ALTER TABLE scanned_events ADD CONSTRAINT scanned_events_event_type_check
+        CHECK (event_type IN (
+          'calendar_invite','appointment','school_event','medical','field_trip',
+          'no_school','special_day','activity','recital','subscription','invoice','bill','other'
+        ));
+
+      CREATE TABLE IF NOT EXISTS family_invites (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        invitee_email TEXT NOT NULL,
+        invited_name TEXT,
+        relation TEXT NOT NULL DEFAULT 'family_member',
+        role TEXT NOT NULL DEFAULT 'member',
+        token TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        accepted_by_profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
+        accepted_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '14 days'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS family_invites_profile_idx
+        ON family_invites (profile_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS family_invites_email_idx
+        ON family_invites (LOWER(invitee_email), status);
+
+      CREATE TABLE IF NOT EXISTS reminders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        source_type TEXT NOT NULL,
+        source_id TEXT,
+        title TEXT NOT NULL,
+        note TEXT,
+        remind_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS reminders_profile_idx
+        ON reminders (profile_id, status, remind_at ASC);
+
+      CREATE TABLE IF NOT EXISTS coparenting_schedules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        schedule_type TEXT NOT NULL,
+        start_date DATE NOT NULL,
+        exchange_time TIME,
+        exchange_location TEXT,
+        parent_a_name TEXT NOT NULL DEFAULT 'Parent A',
+        parent_b_name TEXT NOT NULL DEFAULT 'Parent B',
+        kid_ids JSONB NOT NULL DEFAULT '[]',
+        active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS coparenting_overrides (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        schedule_id UUID NOT NULL REFERENCES coparenting_schedules(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        override_date DATE NOT NULL,
+        assigned_to TEXT NOT NULL CHECK (assigned_to IN ('a', 'b')),
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (schedule_id, override_date)
+      );
+    `)
+
+    schemaEnsured = true
+  })()
+
+  try {
+    await schemaEnsuring
+  } finally {
+    schemaEnsuring = null
+  }
+}
+
 export async function createProfile(data: {
   id: string
   email: string
