@@ -11,10 +11,26 @@ import { seedFactsFromEvents, resolveConflicts, aiExtractFacts } from "@/lib/fac
 import type { Kid } from "@/types"
 import Anthropic from "@anthropic-ai/sdk"
 
+function isAuthError(message: string) {
+  return (
+    message.includes("invalid_grant") ||
+    message.includes("Invalid Credentials") ||
+    message.includes("invalid authentication") ||
+    message.includes("Token has been expired") ||
+    message.includes("UNAUTHENTICATED") ||
+    message.includes("unauthorized") ||
+    message.includes("Unauthorized") ||
+    message.includes("access_denied") ||
+    message.includes("invalid_token")
+  )
+}
+
 export async function POST() {
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (!session.accessToken) return NextResponse.json({ error: "No access token" }, { status: 401 })
+  if (!session.accessToken || session.tokenExpired) {
+    return NextResponse.json({ error: "token_expired" }, { status: 401 })
+  }
 
   const provider = session.provider
 
@@ -118,7 +134,11 @@ export async function POST() {
       }, {}),
     })
   } catch (err) {
-    console.error("[emails/scan]", err instanceof Error ? err.message : err)
+    const message = err instanceof Error ? err.message : "Unknown"
+    console.error("[emails/scan]", message)
+    if (isAuthError(message)) {
+      return NextResponse.json({ error: "token_expired" }, { status: 401 })
+    }
     return NextResponse.json({ error: "Scan failed" }, { status: 500 })
   }
 }

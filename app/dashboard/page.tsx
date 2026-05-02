@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { getProfile, getKids, getEvents, getTasks, getScannedEvents, getFamilyFacts, getPets, getFamilyInvites, getReminders } from "@/lib/db"
 import { DashboardShell } from "./DashboardShell"
+import packageJson from "../../package.json"
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -57,6 +58,7 @@ export default async function DashboardPage() {
       facts={facts}
       invites={invites}
       reminders={reminders}
+      appVersion={packageJson.version}
     />
   )
 }

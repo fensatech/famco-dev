@@ -57,6 +57,7 @@ export interface DashboardViewModel {
   invites: FamilyInvite[]
   reminders: Reminder[]
   provider: string
+  appVersion: string
 }
 
 export type DashboardShellProps = DashboardViewModel

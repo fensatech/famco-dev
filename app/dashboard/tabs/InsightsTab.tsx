@@ -105,7 +105,7 @@ function EventCard({
           )}
 
           {expanded && (
-            <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)" }}>
               {ev.organization_name && (
                 <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}>🏢 <strong style={{ color: "var(--text)" }}>{ev.organization_name}</strong>{ev.organization_type ? ` · ${ev.organization_type.replace("_", " ")}` : ""}</p>
               )}
@@ -113,9 +113,9 @@ function EventCard({
               {ev.school_name && <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}>🏫 {ev.school_name}</p>}
               {ev.grade && <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}>📚 Grade: {ev.grade}</p>}
               {ev.snippet && (
-                <div style={{ marginTop: "0.5rem", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", padding: "0.625rem 0.75rem" }}>
+                <div style={{ marginTop: "0.5rem", background: "rgba(15,23,42,0.03)", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.625rem 0.75rem" }}>
                   <p style={{ fontSize: "0.65rem", color: "var(--muted)", marginBottom: "0.25rem", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Email preview</p>
-                  <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.88)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{ev.snippet}</p>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{ev.snippet}</p>
                 </div>
               )}
             </div>

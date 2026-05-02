@@ -20,7 +20,7 @@ import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
 import type { CoParentingSchedule, CoParentingOverride } from "./types"
 
-export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, reminders: initialReminders }: DashboardShellProps) {
+export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, reminders: initialReminders, appVersion }: DashboardShellProps) {
   const [tab, setTab] = useState<Tab>("home")
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -168,7 +168,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
 
       {/* Sidebar (desktop) */}
       {!isMobile && (
-        <SidebarNav tab={tab} onTab={setTab} scannedCount={scannedEvents.length} pendingTaskCount={pending.length} />
+        <SidebarNav tab={tab} onTab={setTab} scannedCount={scannedEvents.length} pendingTaskCount={pending.length} appVersion={appVersion} />
       )}
 
       {/* Main */}
