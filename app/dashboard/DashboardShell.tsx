@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import type { Event, Task } from "@/lib/db"
-import type { FamilyFact, FamilyInvite, Reminder } from "@/types"
+import type { FamilyFact, FamilyInvite, HouseholdMember, Reminder, ScannedEventAction } from "@/types"
 import type { DashboardShellProps, Tab, GCalEvent, KidRow, PetRow, ScannedEventRow } from "./types"
 import { useSessionTimeout } from "./hooks/useSessionTimeout"
 import { useInsightsRefresh } from "./hooks/useInsightsRefresh"
@@ -20,7 +20,7 @@ import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
 import type { CoParentingSchedule, CoParentingOverride } from "./types"
 
-export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, reminders: initialReminders, appVersion }: DashboardShellProps) {
+export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
   const [tab, setTab] = useState<Tab>("home")
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -29,6 +29,8 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
   const [scannedEvents, setScannedEvents] = useState<ScannedEventRow[]>(initialScannedEvents)
   const [facts, setFacts] = useState<FamilyFact[]>(initialFacts)
   const [invites, setInvites] = useState<FamilyInvite[]>(initialInvites)
+  const [householdMembers] = useState<HouseholdMember[]>(initialHouseholdMembers)
+  const [insightActions, setInsightActions] = useState<ScannedEventAction[]>(initialInsightActions)
   const [reminders, setReminders] = useState<Reminder[]>(initialReminders)
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([])
   const [gcalLoaded, setGcalLoaded] = useState(false)
@@ -91,10 +93,8 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
   const done = tasks.filter((t) => t.completed)
   const activeReminders = reminders.filter((r) => r.status === "pending")
   const assigneeOptions = [
-    [initialProfile.firstName, initialProfile.lastName].filter(Boolean).join(" "),
-    [initialProfile.spouseFirstName, initialProfile.spouseLastName].filter(Boolean).join(" "),
+    ...householdMembers.map((member) => [member.first_name, member.last_name].filter(Boolean).join(" ")),
     ...kids.map((kid) => kid.name),
-    ...invites.filter((invite) => invite.status === "accepted" && invite.invited_name).map((invite) => invite.invited_name as string),
   ].map((name) => name.trim()).filter(Boolean).filter((name, index, list) => list.indexOf(name) === index)
   const todayEvents = events.filter((e) => {
     const today = new Date().toISOString().split("T")[0]
@@ -110,6 +110,10 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
     if (!res.ok) return false
     const { invite } = await res.json()
     setInvites((prev) => [invite, ...prev])
+    const refreshMembers = await fetch("/api/family/invites")
+    if (refreshMembers.ok) {
+      setInvites((await refreshMembers.json()).invites ?? [])
+    }
     return true
   }
 
@@ -117,6 +121,24 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
     const res = await fetch(`/api/family/invites/${id}`, { method: "DELETE" })
     if (!res.ok) return false
     setInvites((prev) => prev.map((invite) => invite.id === id ? { ...invite, status: "revoked" } : invite))
+    return true
+  }
+
+  async function updateInsightAction(
+    scannedEventId: string,
+    data: { status?: "new" | "handled"; assigned_to?: string | null; last_action?: "calendar" | "task" | "reminder" | "handled" | null },
+  ) {
+    const res = await fetch("/api/insights/actions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scanned_event_id: scannedEventId, ...data }),
+    })
+    if (!res.ok) return false
+    const { action } = await res.json()
+    setInsightActions((prev) => {
+      const filtered = prev.filter((item) => item.scanned_event_id !== scannedEventId)
+      return [action, ...filtered]
+    })
     return true
   }
 
@@ -239,11 +261,14 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
           {tab === "insights" && (
             <InsightsTab
               scannedEvents={scannedEvents}
+              insightActions={insightActions}
+              assigneeOptions={assigneeOptions}
               provider={provider}
               onRefresh={refreshInsights}
               onAddEvent={addEvent}
               onAddTask={addTask}
               onAddReminder={addReminder}
+              onUpdateAction={updateInsightAction}
             />
           )}
 
@@ -300,6 +325,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               pets={pets}
               setPets={setPets}
               invites={invites}
+              householdMembers={householdMembers}
               onInvite={createInvite}
               onRevokeInvite={revokeInvite}
             />

@@ -1,10 +1,11 @@
 import { getPool } from "./supabase"
-import type { Profile, Kid, FamilyFact, RawFact } from "@/types"
+import type { Profile, Kid, FamilyFact, HouseholdMember, RawFact, ScannedEventAction } from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
 
 let schemaEnsured = false
 let schemaEnsuring: Promise<void> | null = null
+const householdRootCache = new Map<string, string>()
 
 export async function ensureRuntimeSchema() {
   if (schemaEnsured) return
@@ -29,6 +30,11 @@ export async function ensureRuntimeSchema() {
         dob DATE,
         created_at TIMESTAMPTZ DEFAULT now()
       );
+
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS household_root_id TEXT;
+      UPDATE profiles SET household_root_id = id WHERE household_root_id IS NULL;
+      CREATE INDEX IF NOT EXISTS profiles_household_root_idx
+        ON profiles (household_root_id);
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_name TEXT;
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
@@ -80,6 +86,22 @@ export async function ensureRuntimeSchema() {
       CREATE INDEX IF NOT EXISTS reminders_profile_idx
         ON reminders (profile_id, status, remind_at ASC);
 
+      CREATE TABLE IF NOT EXISTS scanned_event_actions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        scanned_event_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'new',
+        assigned_to TEXT,
+        last_action TEXT,
+        handled_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (profile_id, scanned_event_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS scanned_event_actions_profile_idx
+        ON scanned_event_actions (profile_id, status, updated_at DESC);
+
       CREATE TABLE IF NOT EXISTS coparenting_schedules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -117,6 +139,24 @@ export async function ensureRuntimeSchema() {
   }
 }
 
+async function resolveHouseholdRootId(profileId: string, clientArg?: Queryable): Promise<string> {
+  if (householdRootCache.has(profileId)) return householdRootCache.get(profileId) as string
+  const pool = getPool()
+  const client = clientArg ?? pool
+  const result = await client.query(
+    `SELECT COALESCE(household_root_id, id) AS household_root_id FROM profiles WHERE id = $1`,
+    [profileId],
+  )
+  const rows = result.rows as { household_root_id: string | null }[]
+  const rootId = rows[0]?.household_root_id ?? profileId
+  householdRootCache.set(profileId, rootId)
+  return rootId
+}
+
+function clearHouseholdRootCache(profileId: string) {
+  householdRootCache.delete(profileId)
+}
+
 export async function createProfile(data: {
   id: string
   email: string
@@ -125,11 +165,13 @@ export async function createProfile(data: {
 }) {
   const pool = getPool()
   await pool.query(
-    `INSERT INTO profiles (id, email, first_name, last_name)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (id) DO NOTHING`,
+    `INSERT INTO profiles (id, household_root_id, email, first_name, last_name)
+     VALUES ($1, $1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE
+     SET household_root_id = COALESCE(profiles.household_root_id, EXCLUDED.household_root_id)`,
     [data.id, data.email, data.first_name, data.last_name]
   )
+  householdRootCache.set(data.id, data.id)
 }
 
 export async function getProfile(id: string): Promise<Profile | null> {
@@ -164,9 +206,10 @@ export async function updateProfile(id: string, updates: Partial<Profile>) {
 
 export async function getKids(profileId: string): Promise<Kid[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Kid>(
     "SELECT * FROM kids WHERE profile_id = $1 ORDER BY created_at",
-    [profileId]
+    [householdRootId]
   )
   return rows
 }
@@ -176,15 +219,16 @@ export async function replaceKids(
   kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[]
 ) {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const client = await pool.connect()
   try {
     await client.query("BEGIN")
-    await client.query("DELETE FROM kids WHERE profile_id = $1", [profileId])
+    await client.query("DELETE FROM kids WHERE profile_id = $1", [householdRootId])
     for (const kid of kids) {
       await client.query(
         `INSERT INTO kids (profile_id, name, first_name, last_name, dob, school_name, grade, daycare_name, daycare_address)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [profileId, kid.name, kid.first_name ?? null, kid.last_name ?? null, kid.dob,
+        [householdRootId, kid.name, kid.first_name ?? null, kid.last_name ?? null, kid.dob,
          kid.school_name ?? null, kid.grade ?? null, kid.daycare_name ?? null, kid.daycare_address ?? null]
       )
     }
@@ -199,9 +243,10 @@ export async function replaceKids(
 
 export async function getPets(profileId: string) {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     "SELECT * FROM pets WHERE profile_id = $1 ORDER BY created_at",
-    [profileId]
+    [householdRootId]
   )
   return rows as { id: string; profile_id: string; name: string; animal_type: string; breed: string | null; dob: string | null; created_at: string }[]
 }
@@ -211,14 +256,15 @@ export async function replacePets(
   pets: { name: string; animal_type: string; breed?: string | null; dob?: string | null }[]
 ) {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const client = await pool.connect()
   try {
     await client.query("BEGIN")
-    await client.query("DELETE FROM pets WHERE profile_id = $1", [profileId])
+    await client.query("DELETE FROM pets WHERE profile_id = $1", [householdRootId])
     for (const pet of pets) {
       await client.query(
         "INSERT INTO pets (profile_id, name, animal_type, breed, dob) VALUES ($1, $2, $3, $4, $5)",
-        [profileId, pet.name, pet.animal_type, pet.breed ?? null, pet.dob ?? null]
+        [householdRootId, pet.name, pet.animal_type, pet.breed ?? null, pet.dob ?? null]
       )
     }
     await client.query("COMMIT")
@@ -237,27 +283,30 @@ export async function saveCalendar(data: {
   storage_path: string
 }) {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(data.profile_id)
   await pool.query(
     `INSERT INTO calendars (profile_id, kid_id, filename, storage_path)
      VALUES ($1, $2, $3, $4)`,
-    [data.profile_id, data.kid_id, data.filename, data.storage_path]
+    [householdRootId, data.kid_id, data.filename, data.storage_path]
   )
 }
 
 export async function getLastScanDate(profileId: string): Promise<Date | null> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `SELECT MAX(scanned_at) AS last_scan FROM scanned_events WHERE profile_id = $1`,
-    [profileId]
+    [householdRootId]
   )
   return rows[0]?.last_scan ?? null
 }
 
 export async function getExistingMessageIds(profileId: string): Promise<Set<string>> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `SELECT gmail_message_id FROM scanned_events WHERE profile_id = $1 AND ai_processed = TRUE`,
-    [profileId]
+    [householdRootId]
   )
   return new Set(rows.map((r: { gmail_message_id: string }) => r.gmail_message_id))
 }
@@ -290,6 +339,7 @@ export async function saveScannedEvents(
 ) {
   if (events.length === 0) return
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   for (const e of events) {
     await pool.query(
       `INSERT INTO scanned_events
@@ -320,7 +370,7 @@ export async function saveScannedEvents(
          recurrence = COALESCE(EXCLUDED.recurrence, scanned_events.recurrence),
          scanned_at = NOW()`,
       [
-        profileId, e.gmail_message_id, e.title, e.event_date ?? null,
+        householdRootId, e.gmail_message_id, e.title, e.event_date ?? null,
         e.start_time ?? null, e.end_time ?? null,
         e.event_type, e.organization_name, e.organization_type, e.source_from, e.snippet,
         e.kid_name ?? null, e.grade ?? null, e.school_name ?? null,
@@ -338,21 +388,23 @@ export async function saveScannedOrganizations(
 ) {
   if (orgs.length === 0) return
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   for (const o of orgs) {
     await pool.query(
       `INSERT INTO scanned_organizations (profile_id, name, type, email_domain)
        VALUES ($1,$2,$3,$4)
        ON CONFLICT (profile_id, email_domain) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type`,
-      [profileId, o.name, o.type, o.email_domain]
+      [householdRootId, o.name, o.type, o.email_domain]
     )
   }
 }
 
 export async function getScannedEvents(profileId: string) {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `SELECT * FROM scanned_events WHERE profile_id = $1 ORDER BY event_date DESC NULLS LAST`,
-    [profileId]
+    [householdRootId]
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return rows.map((r: any) => ({
@@ -365,9 +417,10 @@ export async function getScannedEvents(profileId: string) {
 
 export async function getScannedOrganizations(profileId: string) {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `SELECT * FROM scanned_organizations WHERE profile_id = $1 ORDER BY type, name`,
-    [profileId]
+    [householdRootId]
   )
   return rows
 }
@@ -387,16 +440,17 @@ export interface Event {
 
 export async function getEvents(profileId: string, date?: string): Promise<Event[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   if (date) {
     const { rows } = await pool.query<Event>(
       `SELECT * FROM events WHERE profile_id = $1 AND event_date = $2 ORDER BY start_time NULLS LAST, created_at`,
-      [profileId, date]
+      [householdRootId, date]
     )
     return rows
   }
   const { rows } = await pool.query<Event>(
     `SELECT * FROM events WHERE profile_id = $1 AND event_date >= CURRENT_DATE ORDER BY event_date, start_time NULLS LAST LIMIT 50`,
-    [profileId]
+    [householdRootId]
   )
   return rows
 }
@@ -411,13 +465,16 @@ export async function createEvent(profileId: string, data: {
   source?: string
 }): Promise<Event> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Event>(
     `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, source)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [profileId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null,
+    [householdRootId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null,
      data.description ?? null, data.member_name ?? null, data.source ?? "manual"]
   )
-  return rows[0]
+  const event = rows[0]
+  await syncEventReminder(event)
+  return event
 }
 
 export interface IcsEvent {
@@ -434,10 +491,11 @@ export async function importIcsEvents(
   memberName: string
 ): Promise<{ imported: number; skipped: number }> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   // Load existing events for deduplication
   const { rows: existing } = await pool.query<{ title: string; event_date: string }>(
     `SELECT title, event_date FROM events WHERE profile_id = $1`,
-    [profileId]
+    [householdRootId]
   )
   const existingSet = new Set(existing.map((e) => `${e.title.toLowerCase()}|${e.event_date}`))
 
@@ -449,7 +507,7 @@ export async function importIcsEvents(
     await pool.query(
       `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'ics_import')`,
-      [profileId, ev.title, ev.event_date, ev.start_time, ev.end_time, ev.description, memberName]
+      [householdRootId, ev.title, ev.event_date, ev.start_time, ev.end_time, ev.description, memberName]
     )
     imported++
   }
@@ -465,6 +523,7 @@ export async function updateEvent(id: string, profileId: string, data: {
   member_name?: string | null
 }): Promise<Event | null> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const allowed = [
     "title",
     "event_date",
@@ -478,7 +537,7 @@ export async function updateEvent(id: string, profileId: string, data: {
   if (keys.length === 0) {
     const { rows } = await pool.query<Event>(
       `SELECT * FROM events WHERE id = $1 AND profile_id = $2`,
-      [id, profileId]
+      [id, householdRootId]
     )
     return rows[0] ?? null
   }
@@ -488,14 +547,18 @@ export async function updateEvent(id: string, profileId: string, data: {
   const { rows } = await pool.query<Event>(
     `UPDATE events SET ${setClauses.join(", ")}
      WHERE id = $1 AND profile_id = $2 RETURNING *`,
-    [id, profileId, ...values]
+    [id, householdRootId, ...values]
   )
-  return rows[0] ?? null
+  const event = rows[0] ?? null
+  if (event) await syncEventReminder(event)
+  return event
 }
 
 export async function deleteEvent(id: string, profileId: string) {
   const pool = getPool()
-  await pool.query(`DELETE FROM events WHERE id = $1 AND profile_id = $2`, [id, profileId])
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await pool.query(`DELETE FROM events WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
+  await deleteReminderBySource(householdRootId, "event", id)
 }
 
 export interface Task {
@@ -514,9 +577,10 @@ export interface Task {
 
 export async function getTasks(profileId: string): Promise<Task[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Task>(
     `SELECT * FROM tasks WHERE profile_id = $1 ORDER BY completed ASC, due_date NULLS LAST, created_at DESC`,
-    [profileId]
+    [householdRootId]
   )
   return rows
 }
@@ -530,10 +594,11 @@ export async function createTask(profileId: string, data: {
   recurrence?: "daily" | "weekly" | "monthly" | null
 }): Promise<Task> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Task>(
     `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [profileId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null, data.assignee_name ?? null, data.recurrence ?? null]
+    [householdRootId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null, data.assignee_name ?? null, data.recurrence ?? null]
   )
   const task = rows[0]
   await syncTaskReminder(task)
@@ -549,10 +614,11 @@ export async function updateTask(id: string, profileId: string, data: {
   recurrence: "daily" | "weekly" | "monthly" | null
 }): Promise<Task | null> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Task>(
     `UPDATE tasks SET title = $3, due_date = $4, due_time = $5, notes = $6, assignee_name = $7, recurrence = $8
      WHERE id = $1 AND profile_id = $2 RETURNING *`,
-    [id, profileId, data.title, data.due_date, data.due_time, data.notes, data.assignee_name, data.recurrence]
+    [id, householdRootId, data.title, data.due_date, data.due_time, data.notes, data.assignee_name, data.recurrence]
   )
   const task = rows[0] ?? null
   if (task) await syncTaskReminder(task)
@@ -561,12 +627,13 @@ export async function updateTask(id: string, profileId: string, data: {
 
 export async function toggleTask(id: string, profileId: string, completed: boolean): Promise<{ task: Task | null; spawnedTask: Task | null }> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const client = await pool.connect()
   try {
     await client.query("BEGIN")
     const { rows } = await client.query<Task>(
       `UPDATE tasks SET completed = $3, completed_at = $4 WHERE id = $1 AND profile_id = $2 RETURNING *`,
-      [id, profileId, completed, completed ? new Date().toISOString() : null]
+      [id, householdRootId, completed, completed ? new Date().toISOString() : null]
     )
     const task = rows[0] ?? null
     let spawnedTask: Task | null = null
@@ -582,7 +649,7 @@ export async function toggleTask(id: string, profileId: string, completed: boole
         const { rows: spawnedRows } = await client.query<Task>(
           `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence)
            VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [profileId, task.title, nextDueDate, task.due_time, task.notes, task.assignee_name, task.recurrence]
+          [householdRootId, task.title, nextDueDate, task.due_time, task.notes, task.assignee_name, task.recurrence]
         )
         spawnedTask = spawnedRows[0] ?? null
         if (spawnedTask) await syncTaskReminder(spawnedTask, client)
@@ -603,8 +670,9 @@ export async function toggleTask(id: string, profileId: string, completed: boole
 
 export async function deleteTask(id: string, profileId: string) {
   const pool = getPool()
-  await pool.query(`DELETE FROM tasks WHERE id = $1 AND profile_id = $2`, [id, profileId])
-  await deleteReminderBySource(profileId, "task", id)
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await pool.query(`DELETE FROM tasks WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
+  await deleteReminderBySource(householdRootId, "task", id)
 }
 
 function isDateValue(value: unknown): value is Date {
@@ -624,6 +692,13 @@ function taskReminderAt(task: Pick<Task, "due_date" | "due_time">): string | nul
   return task.due_time
     ? `${task.due_date}T${task.due_time}:00`
     : `${task.due_date}T09:00:00`
+}
+
+function eventReminderAt(event: Pick<Event, "event_date" | "start_time">): string | null {
+  if (!event.event_date) return null
+  return event.start_time
+    ? `${event.event_date}T${event.start_time}:00`
+    : `${event.event_date}T09:00:00`
 }
 
 type Queryable = {
@@ -660,6 +735,35 @@ async function syncTaskReminder(task: Task, clientArg?: Queryable): Promise<void
   )
 }
 
+async function syncEventReminder(event: Event, clientArg?: Queryable): Promise<void> {
+  const pool = getPool()
+  const client = clientArg ?? pool
+  const remindAt = eventReminderAt(event)
+  if (!remindAt) {
+    await client.query(
+      `DELETE FROM reminders WHERE profile_id = $1 AND source_type = 'event' AND source_id = $2`,
+      [event.profile_id, event.id],
+    )
+    return
+  }
+
+  const title = event.member_name
+    ? `${event.title} · ${event.member_name}`
+    : event.title
+
+  await client.query(
+    `INSERT INTO reminders (profile_id, source_type, source_id, title, note, remind_at, status, updated_at)
+     VALUES ($1,'event',$2,$3,$4,$5,'pending',NOW())
+     ON CONFLICT (profile_id, source_type, source_id) DO UPDATE SET
+       title = EXCLUDED.title,
+       note = EXCLUDED.note,
+       remind_at = EXCLUDED.remind_at,
+       status = 'pending',
+       updated_at = NOW()`,
+    [event.profile_id, event.id, title, event.description ?? null, remindAt],
+  )
+}
+
 async function deleteReminderBySource(profileId: string, sourceType: Reminder["source_type"], sourceId: string) {
   const pool = getPool()
   await pool.query(
@@ -670,11 +774,12 @@ async function deleteReminderBySource(profileId: string, sourceType: Reminder["s
 
 export async function getReminders(profileId: string): Promise<Reminder[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Reminder & { remind_at: string | Date; created_at: string | Date; updated_at: string | Date }>(
     `SELECT * FROM reminders
      WHERE profile_id = $1 AND status = 'pending'
      ORDER BY remind_at ASC, created_at DESC`,
-    [profileId]
+    [householdRootId]
   )
   return rows.map((row) => ({
     ...row,
@@ -692,6 +797,7 @@ export async function createReminder(profileId: string, data: {
   remind_at: string
 }): Promise<Reminder> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Reminder>(
     `INSERT INTO reminders (profile_id, source_type, source_id, title, note, remind_at)
      VALUES ($1,$2,$3,$4,$5,$6)
@@ -702,7 +808,7 @@ export async function createReminder(profileId: string, data: {
        status = 'pending',
        updated_at = NOW()
      RETURNING *`,
-    [profileId, data.source_type, data.source_id ?? null, data.title, data.note ?? null, data.remind_at]
+    [householdRootId, data.source_type, data.source_id ?? null, data.title, data.note ?? null, data.remind_at]
   )
   const reminder = rows[0]
   return {
@@ -715,18 +821,20 @@ export async function createReminder(profileId: string, data: {
 
 export async function dismissReminder(id: string, profileId: string): Promise<void> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   await pool.query(
     `UPDATE reminders SET status = 'dismissed', updated_at = NOW() WHERE id = $1 AND profile_id = $2`,
-    [id, profileId]
+    [id, householdRootId]
   )
 }
 
 export async function snoozeReminder(id: string, profileId: string, remindAt: string): Promise<Reminder | null> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Reminder>(
     `UPDATE reminders SET remind_at = $3, status = 'pending', updated_at = NOW()
      WHERE id = $1 AND profile_id = $2 RETURNING *`,
-    [id, profileId, remindAt]
+    [id, householdRootId, remindAt]
   )
   const reminder = rows[0] ?? null
   return reminder ? {
@@ -737,15 +845,84 @@ export async function snoozeReminder(id: string, profileId: string, remindAt: st
   } : null
 }
 
+export async function getScannedEventActions(profileId: string): Promise<ScannedEventAction[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<
+    ScannedEventAction & {
+      handled_at: string | Date | null
+      created_at: string | Date
+      updated_at: string | Date
+    }
+  >(
+    `SELECT * FROM scanned_event_actions
+     WHERE profile_id = $1
+     ORDER BY updated_at DESC`,
+    [householdRootId],
+  )
+  return rows.map((row) => ({
+    ...row,
+    handled_at: row.handled_at ? (isDateValue(row.handled_at) ? row.handled_at.toISOString() : String(row.handled_at)) : null,
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }))
+}
+
+export async function upsertScannedEventAction(
+  profileId: string,
+  scannedEventId: string,
+  data: {
+    status?: ScannedEventAction["status"]
+    assigned_to?: string | null
+    last_action?: ScannedEventAction["last_action"]
+  },
+): Promise<ScannedEventAction> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const status = data.status ?? "new"
+  const assignedTo = data.assigned_to ?? null
+  const lastAction = data.last_action ?? null
+  const handledAt = status === "handled" ? new Date().toISOString() : null
+  const { rows } = await pool.query<
+    ScannedEventAction & {
+      handled_at: string | Date | null
+      created_at: string | Date
+      updated_at: string | Date
+    }
+  >(
+    `INSERT INTO scanned_event_actions (profile_id, scanned_event_id, status, assigned_to, last_action, handled_at)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (profile_id, scanned_event_id) DO UPDATE SET
+       status = COALESCE($3, scanned_event_actions.status),
+       assigned_to = $4,
+       last_action = COALESCE($5, scanned_event_actions.last_action),
+       handled_at = CASE
+         WHEN COALESCE($3, scanned_event_actions.status) = 'handled' THEN COALESCE($6, scanned_event_actions.handled_at, NOW())
+         ELSE NULL
+       END,
+       updated_at = NOW()
+     RETURNING *`,
+    [householdRootId, scannedEventId, data.status ?? null, assignedTo, lastAction, handledAt],
+  )
+  const row = rows[0]
+  return {
+    ...row,
+    handled_at: row.handled_at ? (isDateValue(row.handled_at) ? row.handled_at.toISOString() : String(row.handled_at)) : null,
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
 export async function getFamilyInvites(profileId: string): Promise<FamilyInvite[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<FamilyInvite & {
     accepted_at: string | Date | null
     expires_at: string | Date
     created_at: string | Date
   }>(
     `SELECT * FROM family_invites WHERE profile_id = $1 ORDER BY created_at DESC`,
-    [profileId]
+    [householdRootId]
   )
   return rows.map((row) => ({
     ...row,
@@ -762,12 +939,13 @@ export async function createFamilyInvite(profileId: string, data: {
   role: FamilyInvite["role"]
 }): Promise<FamilyInvite> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const token = randomUUID()
   const { rows } = await pool.query<FamilyInvite>(
     `INSERT INTO family_invites (profile_id, invitee_email, invited_name, relation, role, token)
      VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING *`,
-    [profileId, data.invitee_email.toLowerCase(), data.invited_name ?? null, data.relation, data.role, token]
+    [householdRootId, data.invitee_email.toLowerCase(), data.invited_name ?? null, data.relation, data.role, token]
   )
   const invite = rows[0]
   return {
@@ -780,22 +958,71 @@ export async function createFamilyInvite(profileId: string, data: {
 
 export async function revokeFamilyInvite(profileId: string, inviteId: string): Promise<void> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   await pool.query(
     `UPDATE family_invites SET status = 'revoked' WHERE id = $1 AND profile_id = $2`,
-    [inviteId, profileId]
+    [inviteId, householdRootId]
   )
 }
 
 export async function acceptPendingFamilyInvites(email: string, acceptedByProfileId: string): Promise<void> {
   const pool = getPool()
+  const { rows } = await pool.query<{ profile_id: string }>(
+    `SELECT profile_id
+     FROM family_invites
+     WHERE LOWER(invitee_email) = LOWER($1)
+       AND status = 'pending'
+       AND expires_at > NOW()
+     ORDER BY created_at ASC`,
+    [email],
+  )
+  if (!rows[0]) return
+  const householdRootId = await resolveHouseholdRootId(rows[0].profile_id)
+  await pool.query(
+    `UPDATE profiles SET household_root_id = $2 WHERE id = $1`,
+    [acceptedByProfileId, householdRootId],
+  )
+  clearHouseholdRootCache(acceptedByProfileId)
   await pool.query(
     `UPDATE family_invites
      SET status = 'accepted', accepted_at = NOW(), accepted_by_profile_id = $2
      WHERE LOWER(invitee_email) = LOWER($1)
        AND status = 'pending'
        AND expires_at > NOW()`,
-    [email, acceptedByProfileId]
+    [email, acceptedByProfileId],
   )
+}
+
+export async function getHouseholdMembers(profileId: string): Promise<HouseholdMember[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<
+    HouseholdMember & {
+      joined_at: string | Date | null
+    }
+  >(
+    `SELECT
+        p.id AS profile_id,
+        COALESCE(p.household_root_id, p.id) AS household_root_id,
+        p.email,
+        p.first_name,
+        p.last_name,
+        COALESCE(fi.role, CASE WHEN p.id = $1 THEN 'owner' ELSE 'member' END) AS role,
+        COALESCE(fi.relation, CASE WHEN p.id = $1 THEN 'owner' ELSE 'family_member' END) AS relation,
+        fi.accepted_at AS joined_at
+      FROM profiles p
+      LEFT JOIN family_invites fi
+        ON fi.accepted_by_profile_id = p.id
+       AND fi.profile_id = $1
+       AND fi.status = 'accepted'
+      WHERE COALESCE(p.household_root_id, p.id) = $1
+      ORDER BY CASE WHEN p.id = $1 THEN 0 ELSE 1 END, p.created_at ASC`,
+    [householdRootId],
+  )
+  return rows.map((row) => ({
+    ...row,
+    joined_at: row.joined_at ? (isDateValue(row.joined_at) ? row.joined_at.toISOString() : String(row.joined_at)) : null,
+  }))
 }
 
 export interface Expense {
@@ -811,9 +1038,10 @@ export interface Expense {
 
 export async function getExpenses(profileId: string): Promise<Expense[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Expense & { expense_date: string | Date; amount: string | number }>(
     `SELECT * FROM expenses WHERE profile_id = $1 ORDER BY expense_date DESC, created_at DESC LIMIT 200`,
-    [profileId]
+    [householdRootId]
   )
   return rows.map((r) => ({
     ...r,
@@ -826,9 +1054,10 @@ export async function createExpense(profileId: string, data: {
   title: string; amount: number; category?: string | null; expense_date: string; notes?: string | null
 }): Promise<Expense> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `INSERT INTO expenses (profile_id, title, amount, category, expense_date, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [profileId, data.title, data.amount, data.category ?? null, data.expense_date, data.notes ?? null]
+    [householdRootId, data.title, data.amount, data.category ?? null, data.expense_date, data.notes ?? null]
   )
   const r = rows[0]
   return { ...r, expense_date: String(r.expense_date).slice(0, 10), amount: Number(r.amount) }
@@ -836,20 +1065,22 @@ export async function createExpense(profileId: string, data: {
 
 export async function deleteExpense(id: string, profileId: string) {
   const pool = getPool()
-  await pool.query(`DELETE FROM expenses WHERE id = $1 AND profile_id = $2`, [id, profileId])
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await pool.query(`DELETE FROM expenses WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
 }
 
 // ── Family Facts ──────────────────────────────────────────────────────────────
 
 export async function getFamilyFacts(profileId: string): Promise<FamilyFact[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<FamilyFact & {
     source_email_ids: string[] | null
     first_seen: string | Date
     last_confirmed: string | Date
   }>(
     `SELECT * FROM family_facts WHERE profile_id = $1 ORDER BY subject, predicate, confidence DESC`,
-    [profileId]
+    [householdRootId]
   )
   return rows.map((r) => ({
     ...r,
@@ -862,6 +1093,7 @@ export async function getFamilyFacts(profileId: string): Promise<FamilyFact[]> {
 export async function upsertFacts(profileId: string, facts: RawFact[]): Promise<void> {
   if (facts.length === 0) return
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   for (const f of facts) {
     const emailId = f.gmail_message_id ?? null
     await pool.query(
@@ -876,7 +1108,7 @@ export async function upsertFacts(profileId: string, facts: RawFact[]): Promise<
            WHERE $7 IS NOT NULL
          ),
          last_confirmed = NOW()`,
-      [profileId, f.subject, f.subject_type, f.predicate, f.object, f.confidence, emailId]
+      [householdRootId, f.subject, f.subject_type, f.predicate, f.object, f.confidence, emailId]
     )
   }
 }
@@ -887,22 +1119,25 @@ export async function updateFactStatus(
   status: "confirmed" | "uncertain" | "conflicted"
 ): Promise<void> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   await pool.query(
     `UPDATE family_facts SET status = $3 WHERE id = $1 AND profile_id = $2`,
-    [id, profileId, status]
+    [id, householdRootId, status]
   )
 }
 
 export async function deleteFact(id: string, profileId: string): Promise<void> {
   const pool = getPool()
-  await pool.query(`DELETE FROM family_facts WHERE id = $1 AND profile_id = $2`, [id, profileId])
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await pool.query(`DELETE FROM family_facts WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
 }
 
 export async function updateFactObject(id: string, profileId: string, object: string): Promise<void> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   await pool.query(
     `UPDATE family_facts SET object = $3, status = 'confirmed' WHERE id = $1 AND profile_id = $2`,
-    [id, profileId, object]
+    [id, householdRootId, object]
   )
 }
 
@@ -934,9 +1169,10 @@ export interface CoParentingOverride {
 
 export async function getCoParentingSchedule(profileId: string): Promise<CoParentingSchedule | null> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `SELECT * FROM coparenting_schedules WHERE profile_id = $1 AND active = true ORDER BY created_at DESC LIMIT 1`,
-    [profileId]
+    [householdRootId]
   )
   if (!rows[0]) return null
   const r = rows[0]
@@ -956,11 +1192,12 @@ export async function upsertCoParentingSchedule(
   }
 ): Promise<CoParentingSchedule> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
 
   // Prefer updating the existing active record so overrides (tied to schedule_id) are preserved.
   const { rows: existing } = await pool.query(
     `SELECT id FROM coparenting_schedules WHERE profile_id = $1 AND active = true ORDER BY created_at DESC LIMIT 1`,
-    [profileId]
+    [householdRootId]
   )
 
   if (existing[0]) {
@@ -981,7 +1218,7 @@ export async function upsertCoParentingSchedule(
     `INSERT INTO coparenting_schedules
        (profile_id, schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [profileId, data.schedule_type, data.start_date, data.exchange_time, data.exchange_location,
+    [householdRootId, data.schedule_type, data.start_date, data.exchange_time, data.exchange_location,
      data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids)]
   )
   const r = rows[0]
@@ -990,9 +1227,10 @@ export async function upsertCoParentingSchedule(
 
 export async function getCoParentingOverrides(profileId: string, scheduleId: string): Promise<CoParentingOverride[]> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `SELECT * FROM coparenting_overrides WHERE profile_id = $1 AND schedule_id = $2 ORDER BY override_date ASC`,
-    [profileId, scheduleId]
+    [householdRootId, scheduleId]
   )
   return rows.map((r) => ({ ...r, override_date: String(r.override_date).slice(0, 10) }))
 }
@@ -1002,12 +1240,13 @@ export async function createCoParentingOverride(
   data: { schedule_id: string; override_date: string; assigned_to: string; note: string | null }
 ): Promise<CoParentingOverride> {
   const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query(
     `INSERT INTO coparenting_overrides (profile_id, schedule_id, override_date, assigned_to, note)
      VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (schedule_id, override_date) DO UPDATE SET assigned_to = EXCLUDED.assigned_to, note = EXCLUDED.note
      RETURNING *`,
-    [profileId, data.schedule_id, data.override_date, data.assigned_to, data.note]
+    [householdRootId, data.schedule_id, data.override_date, data.assigned_to, data.note]
   )
   const r = rows[0]
   return { ...r, override_date: String(r.override_date).slice(0, 10) }
@@ -1015,5 +1254,6 @@ export async function createCoParentingOverride(
 
 export async function deleteCoParentingOverride(id: string, profileId: string): Promise<void> {
   const pool = getPool()
-  await pool.query(`DELETE FROM coparenting_overrides WHERE id = $1 AND profile_id = $2`, [id, profileId])
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await pool.query(`DELETE FROM coparenting_overrides WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
 }

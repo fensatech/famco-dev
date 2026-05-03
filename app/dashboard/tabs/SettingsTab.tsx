@@ -1,7 +1,7 @@
 "use client"
 import { useState, useRef } from "react"
 import { FAMILY_TYPE_OPTIONS } from "@/types"
-import type { FamilyInvite } from "@/types"
+import type { FamilyInvite, HouseholdMember } from "@/types"
 import type { ProfileData, KidRow, PetRow } from "../types"
 import { memberColor } from "../lib/events"
 import { inputSt, fieldLabelStyle, fieldRowStyle, savePillStyle } from "../styles"
@@ -170,11 +170,12 @@ interface Props {
   pets: PetRow[]
   setPets: (p: PetRow[]) => void
   invites: FamilyInvite[]
+  householdMembers: HouseholdMember[]
   onInvite: (data: { invitee_email: string; invited_name?: string; relation: string; role: string }) => Promise<boolean>
   onRevokeInvite: (id: string) => Promise<boolean>
 }
 
-export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets, invites, onInvite, onRevokeInvite }: Props) {
+export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets, invites, householdMembers, onInvite, onRevokeInvite }: Props) {
   const [draft, setDraft] = useState({
     firstName: initialProfile.firstName, lastName: initialProfile.lastName,
     phone: initialProfile.phone, familyType: initialProfile.familyType,
@@ -305,8 +306,39 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
 
         <SettingsSection title="Household Access" icon="✉️" accent="#22c55e" bg="rgba(34,197,94,0.06)">
           <p style={{ fontSize: "0.78rem", color: "var(--muted)", lineHeight: 1.6 }}>
-            Invite a partner, co-parent, or caregiver after signup. This keeps the dev portal lightweight while giving you a safe way to prepare shared household access.
+            Invite a partner, co-parent, or caregiver after signup. Famco keeps onboarding light, then turns this page into the household source of truth for shared access, better reminders, and more accurate Insights.
           </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+            <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#22c55e", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Active household members
+            </div>
+            {householdMembers.length === 0 ? (
+              <div style={{ padding: "0.9rem 1rem", borderRadius: "12px", border: "1px dashed rgba(255,255,255,0.08)", color: "var(--muted)", fontSize: "0.76rem" }}>
+                You are the only active household member right now.
+              </div>
+            ) : (
+              householdMembers.map((member) => {
+                const name = [member.first_name, member.last_name].filter(Boolean).join(" ") || member.email
+                return (
+                  <div key={member.profile_id} style={{ display: "flex", gap: "0.75rem", alignItems: "center", padding: "0.85rem 1rem", borderRadius: "12px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                    <div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "rgba(34,197,94,0.12)", color: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>
+                      {name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>{name}</span>
+                        <span style={{ fontSize: "0.66rem", padding: "0.08rem 0.42rem", borderRadius: "999px", background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.18)", fontWeight: 700 }}>
+                          {member.role.replace("_", " ")}
+                        </span>
+                        <span style={{ fontSize: "0.65rem", color: "var(--muted)" }}>{member.relation.replace("_", " ")}</span>
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.18rem" }}>{member.email}</div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.9fr 0.9fr auto", gap: "0.625rem", alignItems: "end" }}>
             <div>
               <label style={fieldLabelStyle}>Name</label>

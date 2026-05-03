@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { signOut } from "next-auth/react"
+import type { ScannedEventAction } from "@/types"
 import type { ScannedEventRow } from "../types"
 import { todayStr, fmtTime, addDays } from "../lib/date"
 import { EVENT_TYPE_ICON, EVENT_TYPE_LABEL } from "../lib/events"
@@ -10,6 +11,8 @@ import { Empty } from "../components/shared/Empty"
 
 function EventCard({
   ev,
+  action,
+  assigneeOptions,
   showType,
   today,
   isAddedCal,
@@ -18,8 +21,12 @@ function EventCard({
   onAddCal,
   onAddTask,
   onAddReminder,
+  onAssign,
+  onToggleHandled,
 }: {
   ev: ScannedEventRow
+  action?: ScannedEventAction
+  assigneeOptions: string[]
   showType?: boolean
   today: string
   isAddedCal?: boolean
@@ -28,9 +35,11 @@ function EventCard({
   onAddCal?: () => Promise<void>
   onAddTask?: () => Promise<void>
   onAddReminder?: () => Promise<void>
+  onAssign?: (assignedTo: string | null) => Promise<void>
+  onToggleHandled?: () => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [adding, setAdding] = useState<"cal" | "task" | "reminder" | null>(null)
+  const [adding, setAdding] = useState<"cal" | "task" | "reminder" | "handled" | null>(null)
 
   async function doAddCal(e: { stopPropagation(): void }) {
     e.stopPropagation()
@@ -56,20 +65,35 @@ function EventCard({
     setAdding(null)
   }
 
+  async function doToggleHandled(e: { stopPropagation(): void }) {
+    e.stopPropagation()
+    if (!onToggleHandled) return
+    setAdding("handled")
+    await onToggleHandled()
+    setAdding(null)
+  }
+
+  async function doAssign(value: string) {
+    if (!onAssign) return
+    await onAssign(value || null)
+  }
+
   const dateStr = ev.event_date ? String(ev.event_date).slice(0, 10) : null
   const isUpcoming = !!dateStr && dateStr >= today
   const countdown = dateStr && isUpcoming ? insightsDaysUntil(dateStr, today) : null
+  const handled = action?.status === "handled"
 
   return (
     <div
       onClick={() => setExpanded((v) => !v)}
       style={{
         background: expanded ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.03)",
-        border: `1px solid ${ev.urgency === "high" ? "rgba(248,113,113,0.3)" : expanded ? "rgba(99,102,241,0.4)" : "var(--border)"}`,
+        border: `1px solid ${handled ? "rgba(34,197,94,0.35)" : ev.urgency === "high" ? "rgba(248,113,113,0.3)" : expanded ? "rgba(99,102,241,0.4)" : "var(--border)"}`,
         borderRadius: "12px",
         padding: "0.875rem 1rem",
         cursor: "pointer",
         transition: "all 0.15s",
+        opacity: handled ? 0.92 : 1,
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
@@ -80,6 +104,8 @@ function EventCard({
             {ev.urgency === "high" && <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(248,113,113,0.2)", color: "#f87171", border: "1px solid rgba(248,113,113,0.4)" }}>URGENT</span>}
             {ev.kid_name && <span style={{ fontSize: "0.65rem", fontWeight: 600, padding: "0.05rem 0.4rem", borderRadius: "20px", background: "rgba(244,114,182,0.15)", color: "#f472b6", border: "1px solid rgba(244,114,182,0.3)" }}>{ev.kid_name}{ev.grade ? ` · ${ev.grade}` : ""}</span>}
             {showType && <span style={{ fontSize: "0.6rem", fontWeight: 600, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(255,255,255,0.07)", color: "var(--muted)", border: "1px solid var(--border)" }}>{EVENT_TYPE_LABEL[ev.event_type] ?? ev.event_type}</span>}
+            {handled && <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.28)" }}>HANDLED</span>}
+            {action?.assigned_to && <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(99,102,241,0.12)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.28)" }}>Assigned: {action.assigned_to}</span>}
             {countdown && <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "0.05rem 0.4rem", borderRadius: "20px", background: `${countdown.color}22`, color: countdown.color, border: `1px solid ${countdown.color}44`, marginLeft: "auto" }}>{countdown.label}</span>}
             <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--muted)", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
           </div>
@@ -106,8 +132,21 @@ function EventCard({
 
           {expanded && (
             <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.6rem", alignItems: "center" }}>
+                <label style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600 }}>Assign</label>
+                <select
+                  value={action?.assigned_to ?? ""}
+                  onChange={(e) => void doAssign(e.target.value)}
+                  style={{ minWidth: "160px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.03)", color: "var(--text)", padding: "0.35rem 0.5rem", fontSize: "0.72rem", fontFamily: "'Inter',sans-serif" }}
+                >
+                  <option value="">Unassigned</option>
+                  {assigneeOptions.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
               {ev.organization_name && (
-                <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}>🏢 <strong style={{ color: "var(--text)" }}>{ev.organization_name}</strong>{ev.organization_type ? ` · ${ev.organization_type.replace("_", " ")}` : ""}</p>
+                <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}><strong style={{ color: "var(--text)" }}>{ev.organization_name}</strong>{ev.organization_type ? ` · ${ev.organization_type.replace("_", " ")}` : ""}</p>
               )}
               {ev.source_from && <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}>✉ {ev.source_from}</p>}
               {ev.school_name && <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.3rem" }}>🏫 {ev.school_name}</p>}
@@ -130,11 +169,16 @@ function EventCard({
           </button>
         )}
         <button onClick={doAddTask} disabled={!!isAddedTask || adding !== null} style={{ fontSize: "0.68rem", padding: "0.2rem 0.625rem", borderRadius: "6px", border: `1px solid ${isAddedTask ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.14)"}`, background: isAddedTask ? "rgba(52,211,153,0.08)" : "none", color: isAddedTask ? "#34d399" : "var(--muted)", cursor: isAddedTask || adding !== null ? "default" : "pointer", fontFamily: "'Inter',sans-serif", transition: "all 0.15s", fontWeight: 500 }}>
-          {isAddedTask ? "✓ Reminder" : adding === "task" ? "Adding…" : "+ Reminder"}
+          {isAddedTask ? "✓ In Tasks" : adding === "task" ? "Adding…" : "+ Task"}
         </button>
         {onAddReminder && (
           <button onClick={doAddReminder} disabled={!!isReminderAdded || adding !== null} style={{ fontSize: "0.68rem", padding: "0.2rem 0.625rem", borderRadius: "6px", border: `1px solid ${isReminderAdded ? "rgba(139,92,246,0.4)" : "rgba(139,92,246,0.24)"}`, background: isReminderAdded ? "rgba(139,92,246,0.08)" : "none", color: "#8B5CF6", cursor: isReminderAdded || adding !== null ? "default" : "pointer", fontFamily: "'Inter',sans-serif", transition: "all 0.15s", fontWeight: 600 }}>
-            {isReminderAdded ? "✓ Remind later" : adding === "reminder" ? "Adding…" : "⏰ Remind me"}
+            {isReminderAdded ? "✓ Reminder set" : adding === "reminder" ? "Adding…" : "Remind me"}
+          </button>
+        )}
+        {onToggleHandled && (
+          <button onClick={doToggleHandled} disabled={adding !== null} style={{ fontSize: "0.68rem", padding: "0.2rem 0.625rem", borderRadius: "6px", border: `1px solid ${handled ? "rgba(34,197,94,0.4)" : "rgba(34,197,94,0.24)"}`, background: handled ? "rgba(34,197,94,0.08)" : "none", color: "#22c55e", cursor: adding !== null ? "default" : "pointer", fontFamily: "'Inter',sans-serif", transition: "all 0.15s", fontWeight: 600 }}>
+            {adding === "handled" ? "Saving…" : handled ? "Reopen" : "Mark handled"}
           </button>
         )}
       </div>
@@ -154,14 +198,17 @@ function InsightsSectionHeader({ icon, title, count, accent }: { icon: string; t
 
 interface Props {
   scannedEvents: ScannedEventRow[]
+  insightActions: ScannedEventAction[]
+  assigneeOptions: string[]
   provider: string
   onRefresh: () => Promise<{ error?: string }>
   onAddEvent: (title: string, date: string, time: string | null) => Promise<boolean>
   onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
   onAddReminder: (data: { source_type: "scanned_event"; source_id: string; title: string; note?: string | null; remind_at: string }) => Promise<boolean>
+  onUpdateAction: (scannedEventId: string, data: { status?: "new" | "handled"; assigned_to?: string | null; last_action?: "calendar" | "task" | "reminder" | "handled" | null }) => Promise<boolean>
 }
 
-export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, onAddTask, onAddReminder }: Props) {
+export function InsightsTab({ scannedEvents, insightActions, assigneeOptions, provider, onRefresh, onAddEvent, onAddTask, onAddReminder, onUpdateAction }: Props) {
   const [section, setSection] = useState<string>("dashboard")
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
   const [refreshing, setRefreshing] = useState(false)
@@ -170,6 +217,7 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
   const [addedToCalendar, setAddedToCalendar] = useState<Set<string>>(new Set())
   const [addedAsTask, setAddedAsTask] = useState<Set<string>>(new Set())
   const [addedAsReminder, setAddedAsReminder] = useState<Set<string>>(new Set())
+  const actionsById = new Map(insightActions.map((action) => [action.scanned_event_id, action]))
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -182,12 +230,18 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
 
   async function handleAddToCalendar(ev: ScannedEventRow): Promise<void> {
     const ok = await onAddEvent(ev.calendar_title ?? ev.title, String(ev.event_date ?? "").slice(0, 10), ev.start_time ?? null)
-    if (ok) setAddedToCalendar((prev) => new Set(prev).add(ev.id))
+    if (ok) {
+      setAddedToCalendar((prev) => new Set(prev).add(ev.id))
+      await onUpdateAction(ev.id, { last_action: "calendar" })
+    }
   }
 
   async function handleAddAsTask(ev: ScannedEventRow): Promise<void> {
     const ok = await onAddTask(ev.calendar_title ?? ev.title)
-    if (ok) setAddedAsTask((prev) => new Set(prev).add(ev.id))
+    if (ok) {
+      setAddedAsTask((prev) => new Set(prev).add(ev.id))
+      await onUpdateAction(ev.id, { last_action: "task" })
+    }
   }
 
   async function handleAddReminder(ev: ScannedEventRow): Promise<void> {
@@ -206,14 +260,30 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
       note: ev.special_instructions ?? ev.snippet ?? null,
       remind_at: remindAt,
     })
-    if (ok) setAddedAsReminder((prev) => new Set(prev).add(ev.id))
+    if (ok) {
+      setAddedAsReminder((prev) => new Set(prev).add(ev.id))
+      await onUpdateAction(ev.id, { last_action: "reminder" })
+    }
+  }
+
+  async function handleAssign(ev: ScannedEventRow, assignedTo: string | null): Promise<void> {
+    await onUpdateAction(ev.id, { assigned_to: assignedTo })
+  }
+
+  async function handleToggleHandled(ev: ScannedEventRow): Promise<void> {
+    const current = actionsById.get(ev.id)
+    const nextStatus = current?.status === "handled" ? "new" : "handled"
+    await onUpdateAction(ev.id, { status: nextStatus, last_action: nextStatus === "handled" ? "handled" : current?.last_action ?? null })
   }
 
   const today = todayStr()
   const in7 = addDays(today, 7)
 
   const all = scannedEvents
-  const actionNeeded = sortEvents(all.filter((e) => e.urgency === "high" || !!e.special_instructions), sortOrder)
+  const actionNeeded = sortEvents(all.filter((e) => {
+    const action = actionsById.get(e.id)
+    return action?.status !== "handled" && (e.urgency === "high" || !!e.special_instructions)
+  }), sortOrder)
   const thisWeek = all
     .filter((e) => {
       const d = e.event_date ? String(e.event_date).slice(0, 10) : null
@@ -325,13 +395,15 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
               <InsightsSectionHeader icon="⚡" title="Action Needed" count={actionNeeded.length} accent="#f87171" />
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {actionNeeded.slice(0, 5).map((ev) => (
-                  <EventCard key={ev.id} ev={ev} showType today={today}
+                  <EventCard key={ev.id} ev={ev} action={actionsById.get(ev.id)} assigneeOptions={assigneeOptions} showType today={today}
                     isAddedCal={addedToCalendar.has(ev.id)}
                     isAddedTask={addedAsTask.has(ev.id)}
                     isReminderAdded={addedAsReminder.has(ev.id)}
                     onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
                     onAddTask={() => handleAddAsTask(ev)}
                     onAddReminder={() => handleAddReminder(ev)}
+                    onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
+                    onToggleHandled={() => handleToggleHandled(ev)}
                   />
                 ))}
               </div>
@@ -343,13 +415,15 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
               <InsightsSectionHeader icon="📅" title="This Week" count={thisWeek.length} accent="#34d399" />
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {thisWeek.map((ev) => (
-                  <EventCard key={ev.id} ev={ev} showType today={today}
+                  <EventCard key={ev.id} ev={ev} action={actionsById.get(ev.id)} assigneeOptions={assigneeOptions} showType today={today}
                     isAddedCal={addedToCalendar.has(ev.id)}
                     isAddedTask={addedAsTask.has(ev.id)}
                     isReminderAdded={addedAsReminder.has(ev.id)}
                     onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
                     onAddTask={() => handleAddAsTask(ev)}
                     onAddReminder={() => handleAddReminder(ev)}
+                    onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
+                    onToggleHandled={() => handleToggleHandled(ev)}
                   />
                 ))}
               </div>
@@ -370,13 +444,15 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
                 )}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {preview.map((ev) => (
-                    <EventCard key={ev.id} ev={ev} today={today}
+                    <EventCard key={ev.id} ev={ev} action={actionsById.get(ev.id)} assigneeOptions={assigneeOptions} today={today}
                       isAddedCal={addedToCalendar.has(ev.id)}
                       isAddedTask={addedAsTask.has(ev.id)}
                       isReminderAdded={addedAsReminder.has(ev.id)}
                       onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
                       onAddTask={() => handleAddAsTask(ev)}
                       onAddReminder={() => handleAddReminder(ev)}
+                      onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
+                      onToggleHandled={() => handleToggleHandled(ev)}
                     />
                   ))}
                   {remaining > 0 && <button onClick={() => setSection(cat.id)} style={{ background: "none", border: "none", color: cat.accent, cursor: "pointer", fontSize: "0.78rem", textAlign: "left", padding: "0.25rem 0" }}>+ {remaining} more →</button>}
@@ -390,13 +466,15 @@ export function InsightsTab({ scannedEvents, provider, onRefresh, onAddEvent, on
           {activeSectionEvents.length === 0
             ? <Empty text={`No ${section} emails found`} />
             : activeSectionEvents.map((ev) => (
-              <EventCard key={ev.id} ev={ev} showType today={today}
+              <EventCard key={ev.id} ev={ev} action={actionsById.get(ev.id)} assigneeOptions={assigneeOptions} showType today={today}
                 isAddedCal={addedToCalendar.has(ev.id)}
                 isAddedTask={addedAsTask.has(ev.id)}
                 isReminderAdded={addedAsReminder.has(ev.id)}
                 onAddCal={ev.event_date ? () => handleAddToCalendar(ev) : undefined}
                 onAddTask={() => handleAddAsTask(ev)}
                 onAddReminder={() => handleAddReminder(ev)}
+                onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
+                onToggleHandled={() => handleToggleHandled(ev)}
               />
             ))}
         </div>

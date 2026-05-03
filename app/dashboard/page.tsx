@@ -1,6 +1,6 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
-import { ensureRuntimeSchema, getProfile, getKids, getEvents, getTasks, getScannedEvents, getFamilyFacts, getPets, getFamilyInvites, getReminders } from "@/lib/db"
+import { ensureRuntimeSchema, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getKids, getPets, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
 import { DashboardShell } from "./DashboardShell"
 import packageJson from "../../package.json"
 
@@ -8,7 +8,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.profileId) redirect("/")
   await ensureRuntimeSchema().catch(() => {})
-  const [profile, kids, allEvents, tasks, scannedEvents, facts, pets, invites, reminders] = await Promise.all([
+  const [profile, kids, allEvents, tasks, scannedEvents, facts, pets, invites, householdMembers, insightActions, reminders] = await Promise.all([
     getProfile(session.profileId),
     getKids(session.profileId),
     getEvents(session.profileId),
@@ -17,6 +17,8 @@ export default async function DashboardPage() {
     getFamilyFacts(session.profileId),
     getPets(session.profileId).catch(() => []),
     getFamilyInvites(session.profileId).catch(() => []),
+    getHouseholdMembers(session.profileId).catch(() => []),
+    getScannedEventActions(session.profileId).catch(() => []),
     getReminders(session.profileId).catch(() => []),
   ])
   if (!profile?.onboarding_completed) redirect("/onboarding")
@@ -58,6 +60,8 @@ export default async function DashboardPage() {
       scannedEvents={scannedEvents}
       facts={facts}
       invites={invites}
+      householdMembers={householdMembers}
+      insightActions={insightActions}
       reminders={reminders}
       appVersion={packageJson.version}
     />

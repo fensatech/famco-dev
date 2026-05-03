@@ -6,6 +6,7 @@ export type FamilyType =
 
 export interface Profile {
   id: string
+  household_root_id?: string | null
   email: string
   first_name: string | null
   last_name: string | null
@@ -75,6 +76,17 @@ export interface FamilyInvite {
   created_at: string
 }
 
+export interface HouseholdMember {
+  profile_id: string
+  household_root_id: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  role: "owner" | "member" | "adult" | "co_parent"
+  relation: "owner" | "partner" | "co_parent" | "family_member" | "caregiver"
+  joined_at: string | null
+}
+
 export interface Reminder {
   id: string
   profile_id: string
@@ -84,6 +96,18 @@ export interface Reminder {
   note: string | null
   remind_at: string
   status: "pending" | "dismissed"
+  created_at: string
+  updated_at: string
+}
+
+export interface ScannedEventAction {
+  id: string
+  profile_id: string
+  scanned_event_id: string
+  status: "new" | "handled"
+  assigned_to: string | null
+  last_action: "calendar" | "task" | "reminder" | "handled" | null
+  handled_at: string | null
   created_at: string
   updated_at: string
 }

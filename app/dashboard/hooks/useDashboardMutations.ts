@@ -35,6 +35,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
         if (a.event_date !== b.event_date) return (a.event_date ?? "") < (b.event_date ?? "") ? -1 : 1
         return (a.start_time ?? "99:99") < (b.start_time ?? "99:99") ? -1 : 1
       }))
+      await refreshReminders()
     }
     setSaving(false)
     return res.ok
@@ -102,6 +103,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
   async function deleteEvent(id: string) {
     await fetch(`/api/events/${id}`, { method: "DELETE" })
     setEvents((prev) => prev.filter((e) => e.id !== id))
+    await refreshReminders()
   }
 
   async function updateEvent(id: string, data: Partial<Event>) {
@@ -113,6 +115,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
     if (res.ok) {
       const { event } = await res.json()
       setEvents((prev) => prev.map((e) => e.id === id ? event : e))
+      await refreshReminders()
     }
   }
 
