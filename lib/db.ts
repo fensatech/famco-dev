@@ -1,6 +1,6 @@
 import { getPool } from "./supabase"
 import { BILLING_GRACE_DAYS, BILLING_TRIAL_DAYS, normalizeBillingEmail } from "./billing"
-import type { Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction, TrialRetentionReason, TrialRetentionRecord } from "@/types"
+import type { DeletionFeedbackCategory, Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction, TrialRetentionReason, TrialRetentionRecord } from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
 
@@ -69,9 +69,17 @@ export async function ensureRuntimeSchema() {
         deleted_at TIMESTAMPTZ,
         deleted_reason TEXT
           CHECK (deleted_reason IN ('user_deleted','expired_unpaid','manual_cleanup') OR deleted_reason IS NULL),
+        deletion_feedback_category TEXT
+          CHECK (deletion_feedback_category IN ('too_expensive','not_useful','missing_features','too_many_bugs','privacy_concern','switching_tools','other') OR deletion_feedback_category IS NULL),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE trial_retention_records
+        ADD COLUMN IF NOT EXISTS deletion_feedback_category TEXT;
+      ALTER TABLE trial_retention_records DROP CONSTRAINT IF EXISTS trial_retention_records_deletion_feedback_category_check;
+      ALTER TABLE trial_retention_records ADD CONSTRAINT trial_retention_records_deletion_feedback_category_check
+        CHECK (deletion_feedback_category IN ('too_expensive','not_useful','missing_features','too_many_bugs','privacy_concern','switching_tools','other') OR deletion_feedback_category IS NULL);
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_name TEXT;
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
@@ -288,6 +296,7 @@ export async function upsertTrialRetentionRecord(data: {
            trial_started_at = LEAST(trial_started_at, $6::timestamptz),
            deleted_at = NULL,
            deleted_reason = NULL,
+           deletion_feedback_category = NULL,
            updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
@@ -325,15 +334,20 @@ export async function getTrialRetentionRecordByEmail(email: string): Promise<Tri
   return mapTrialRetentionRecord(rows[0])
 }
 
-export async function markTrialRetentionDeleted(profileIds: string[], reason: TrialRetentionReason, clientArg?: Queryable): Promise<void> {
+export async function markTrialRetentionDeleted(
+  profileIds: string[],
+  reason: TrialRetentionReason,
+  feedbackCategory?: DeletionFeedbackCategory | null,
+  clientArg?: Queryable,
+): Promise<void> {
   if (profileIds.length === 0) return
   const pool = getPool()
   const client = clientArg ?? pool
   await client.query(
     `UPDATE trial_retention_records
-     SET deleted_at = NOW(), deleted_reason = $2, updated_at = NOW()
+     SET deleted_at = NOW(), deleted_reason = $2, deletion_feedback_category = $3, updated_at = NOW()
      WHERE provider_profile_id = ANY($1::text[])`,
-    [profileIds, reason],
+    [profileIds, reason, feedbackCategory ?? null],
   )
 }
 
@@ -1310,7 +1324,11 @@ export async function getHouseholdMembers(profileId: string): Promise<HouseholdM
   }))
 }
 
-export async function deleteAccount(profileId: string, reason: TrialRetentionReason = "user_deleted"): Promise<{ deletedHousehold: boolean }> {
+export async function deleteAccount(
+  profileId: string,
+  reason: TrialRetentionReason = "user_deleted",
+  feedbackCategory?: DeletionFeedbackCategory | null,
+): Promise<{ deletedHousehold: boolean }> {
   const pool = getPool()
   const client = await pool.connect()
   try {
@@ -1340,7 +1358,7 @@ export async function deleteAccount(profileId: string, reason: TrialRetentionRea
          WHERE COALESCE(household_root_id, id) = $1`,
         [householdRootId],
       )
-      await markTrialRetentionDeleted(memberRows.map((member) => member.id), reason, client)
+      await markTrialRetentionDeleted(memberRows.map((member) => member.id), reason, feedbackCategory, client)
       await client.query("COMMIT")
       for (const member of memberRows) clearHouseholdRootCache(member.id)
       clearHouseholdRootCache(householdRootId)
@@ -1354,7 +1372,7 @@ export async function deleteAccount(profileId: string, reason: TrialRetentionRea
       [profileId],
     )
     await client.query(`DELETE FROM profiles WHERE id = $1`, [profileId])
-    await markTrialRetentionDeleted([profileId], reason, client)
+    await markTrialRetentionDeleted([profileId], reason, feedbackCategory, client)
     await client.query("COMMIT")
     clearHouseholdRootCache(profileId)
     return { deletedHousehold: false }

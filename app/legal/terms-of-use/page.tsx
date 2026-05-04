@@ -151,9 +151,10 @@ export default function TermsOfUsePage() {
               </p>
               <p>
                 Even after household data is deleted, Famco may retain a minimal account-history
-                record containing your normalized email, provider identity, and original trial
-                start date for the limited purpose of preventing repeated free-trial abuse and
-                supporting future paid reactivation.
+                record containing your normalized email, provider identity, original trial
+                start date, and selected deletion reason for the limited purpose of preventing
+                repeated free-trial abuse, understanding deletion trends, and supporting future
+                paid reactivation.
               </p>
             </Section>
 

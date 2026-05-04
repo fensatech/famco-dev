@@ -141,6 +141,7 @@ export default function PrivacyPolicyPage() {
               <ul>
                 <li>Trial start and trial/grace timeline information tied to the household owner account</li>
                 <li>Subscription plan metadata, payment provider selection, and billing status information</li>
+                <li>If you manually delete your account, the multiple-choice deletion reason you select</li>
                 <li>
                   If paid billing is enabled, limited PayPal billing references needed to manage recurring
                   household subscriptions
@@ -308,9 +309,9 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Minimal trial-history record:</strong> After deletion, Famco may retain a
-                  limited record containing your normalized email, provider identity, and original
-                  trial start date to prevent repeated free-trial abuse and support future paid
-                  reactivation.
+                  limited record containing your normalized email, provider identity, original
+                  trial start date, and selected deletion reason to prevent repeated free-trial
+                  abuse, understand churn at a high level, and support future paid reactivation.
                 </li>
                 <li>
                   <strong>Usage logs:</strong> Retained for up to 12 months for security and

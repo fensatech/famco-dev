@@ -40,6 +40,15 @@ export interface Profile {
 
 export type TrialRetentionReason = "user_deleted" | "expired_unpaid" | "manual_cleanup"
 
+export type DeletionFeedbackCategory =
+  | "too_expensive"
+  | "not_useful"
+  | "missing_features"
+  | "too_many_bugs"
+  | "privacy_concern"
+  | "switching_tools"
+  | "other"
+
 export interface TrialRetentionRecord {
   id: string
   normalized_email: string
@@ -49,6 +58,7 @@ export interface TrialRetentionRecord {
   trial_started_at: string
   deleted_at: string | null
   deleted_reason: TrialRetentionReason | null
+  deletion_feedback_category: DeletionFeedbackCategory | null
   created_at: string
   updated_at: string
 }

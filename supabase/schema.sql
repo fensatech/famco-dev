@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS trial_retention_records (
   trial_started_at  TIMESTAMPTZ NOT NULL,
   deleted_at        TIMESTAMPTZ,
   deleted_reason    TEXT CHECK (deleted_reason IN ('user_deleted','expired_unpaid','manual_cleanup') OR deleted_reason IS NULL),
+  deletion_feedback_category TEXT CHECK (deletion_feedback_category IN ('too_expensive','not_useful','missing_features','too_many_bugs','privacy_concern','switching_tools','other') OR deletion_feedback_category IS NULL),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

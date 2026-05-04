@@ -2,8 +2,19 @@
 
 import { signOut } from "next-auth/react"
 import { useState } from "react"
+import type { DeletionFeedbackCategory } from "@/types"
 import type { BillingSummary } from "../types"
 import { savePillStyle } from "../styles"
+
+const deletionFeedbackOptions: { value: DeletionFeedbackCategory; label: string }[] = [
+  { value: "too_expensive", label: "Too expensive" },
+  { value: "not_useful", label: "Not useful enough" },
+  { value: "missing_features", label: "Missing features I need" },
+  { value: "too_many_bugs", label: "Too many bugs or reliability issues" },
+  { value: "privacy_concern", label: "Privacy or trust concern" },
+  { value: "switching_tools", label: "Switching to another tool" },
+  { value: "other", label: "Other" },
+]
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -51,6 +62,7 @@ function StatusCard({
 
 export function BillingTab({ billing }: { billing: BillingSummary }) {
   const [confirmValue, setConfirmValue] = useState("")
+  const [deletionFeedbackCategory, setDeletionFeedbackCategory] = useState<DeletionFeedbackCategory | "">("")
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,11 +75,15 @@ export function BillingTab({ billing }: { billing: BillingSummary }) {
       : "Your preview has crossed the grace window, but payment enforcement is still off while you keep testing."
 
   async function handleDelete() {
-    if (confirmValue !== "DELETE") return
+    if (confirmValue !== "DELETE" || !deletionFeedbackCategory) return
     setDeleting(true)
     setError(null)
     try {
-      const response = await fetch("/api/account", { method: "DELETE" })
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deletion_feedback_category: deletionFeedbackCategory }),
+      })
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
         setError(typeof body.error === "string" ? body.error : "Unable to delete the account right now.")
@@ -185,9 +201,22 @@ export function BillingTab({ billing }: { billing: BillingSummary }) {
           {billing.isPrimaryUser
             ? "This deletes the primary Famco account and permanently removes the household data connected to it right away."
             : "This removes your Famco account from the shared household right away. The primary household data remains with the account owner."}
-          {" "}There is no undo. To prevent repeat free trials, Famco may retain a minimal billing-history record with your normalized email, provider identity, and original trial start date after the household data is removed.
+          {" "}There is no undo. Before deletion, please tell us the main reason you are leaving. To prevent repeat free trials, Famco may retain a minimal billing-history record with your normalized email, provider identity, original trial start date, and selected deletion reason after the household data is removed.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem", maxWidth: "360px" }}>
+          <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Why are you deleting? *
+          </label>
+          <select
+            value={deletionFeedbackCategory}
+            onChange={(event) => setDeletionFeedbackCategory(event.target.value as DeletionFeedbackCategory | "")}
+            style={{ width: "100%", padding: "0.7rem 0.85rem", borderRadius: "10px", background: "#fff", border: "1px solid rgba(251,113,133,0.35)", color: "var(--text)", fontSize: "0.9rem", fontFamily: "inherit", boxSizing: "border-box" }}
+          >
+            <option value="">Select a reason</option>
+            {deletionFeedbackOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
           <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Type DELETE to confirm
           </label>
@@ -201,8 +230,8 @@ export function BillingTab({ billing }: { billing: BillingSummary }) {
           <button
             type="button"
             onClick={() => void handleDelete()}
-            disabled={deleting || confirmValue !== "DELETE"}
-            style={{ ...savePillStyle, background: "linear-gradient(135deg,#fb7185,#ef4444)", opacity: deleting || confirmValue !== "DELETE" ? 0.55 : 1, cursor: deleting || confirmValue !== "DELETE" ? "not-allowed" : "pointer" }}
+            disabled={deleting || confirmValue !== "DELETE" || !deletionFeedbackCategory}
+            style={{ ...savePillStyle, background: "linear-gradient(135deg,#fb7185,#ef4444)", opacity: deleting || confirmValue !== "DELETE" || !deletionFeedbackCategory ? 0.55 : 1, cursor: deleting || confirmValue !== "DELETE" || !deletionFeedbackCategory ? "not-allowed" : "pointer" }}
           >
             {deleting ? "Deleting…" : billing.isPrimaryUser ? "Delete household now" : "Delete my account now"}
           </button>
