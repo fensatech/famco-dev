@@ -1,10 +1,11 @@
 "use client"
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { FAMILY_TYPE_OPTIONS } from "@/types"
 import type { FamilyInvite, HouseholdMember } from "@/types"
 import type { ProfileData, KidRow, PetRow } from "../types"
 import { memberColor } from "../lib/events"
 import { inputSt, fieldLabelStyle, fieldRowStyle, savePillStyle } from "../styles"
+import { AddressSearch } from "../components/AddressSearch"
 
 const TIMEZONES = [
   { value: "America/New_York",             label: "Eastern — New York, Boston" },
@@ -43,101 +44,6 @@ const PET_TYPES = [
   { value: "hamster", label: "Hamster", icon: "🐹" },
   { value: "other", label: "Other", icon: "🐾" },
 ]
-
-interface PhotonFeature {
-  type: "Feature"
-  geometry: { type: "Point"; coordinates: [number, number] }
-  properties: {
-    osm_id: number; osm_type: string; name?: string
-    housenumber?: string; street?: string
-    city?: string; town?: string; village?: string
-    state?: string; county?: string
-    postcode?: string; country?: string; countrycode?: string
-  }
-}
-
-const NA_BBOX = "-172.0,24.0,-52.0,72.0"
-
-async function photonSearch(q: string): Promise<PhotonFeature[]> {
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=en&bbox=${NA_BBOX}`
-  const res = await fetch(url)
-  const data: { features: PhotonFeature[] } = await res.json()
-  return data.features.filter((f) => {
-    const cc = f.properties.countrycode?.toUpperCase()
-    return cc === "CA" || cc === "US"
-  })
-}
-
-function parsePhoton(f: PhotonFeature) {
-  const p = f.properties
-  const street = [p.housenumber, p.street].filter(Boolean).join(" ")
-  const city = p.city ?? p.town ?? p.village ?? ""
-  const province = p.state ?? ""
-  const postal = p.postcode ?? ""
-  const cc = p.countrycode?.toUpperCase()
-  const country = cc === "CA" ? "Canada" : cc === "US" ? "United States" : (p.country ?? "")
-  const displayParts = [street || p.name, city, province, postal, country].filter(Boolean)
-  return { street: street || p.name || "", city, province, postal, country, display: displayParts.join(", ") }
-}
-
-function AddressSearch({ value, onChange, onSelect, onSelectSimple, placeholder, simpleMode }: {
-  value: string
-  onChange: (v: string) => void
-  onSelect?: (parts: { street: string; city: string; province: string; postal: string; country: string }) => void
-  onSelectSimple?: (full: string) => void
-  placeholder?: string
-  simpleMode?: boolean
-}) {
-  const [results, setResults] = useState<PhotonFeature[]>([])
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleInput(v: string) {
-    onChange(v)
-    if (timerRef.current) clearTimeout(timerRef.current)
-    if (v.trim().length < 3) { setResults([]); setOpen(false); return }
-    timerRef.current = setTimeout(async () => {
-      setLoading(true)
-      try {
-        const data = await photonSearch(v)
-        setResults(data)
-        setOpen(data.length > 0)
-      } catch { setResults([]) } finally { setLoading(false) }
-    }, 350)
-  }
-
-  function pick(f: PhotonFeature) {
-    const parts = parsePhoton(f)
-    if (simpleMode) {
-      const full = [parts.street, parts.city, parts.province, parts.postal].filter(Boolean).join(", ")
-      onChange(full)
-      onSelectSimple?.(full)
-    } else {
-      onSelect?.(parts)
-      onChange(parts.street)
-    }
-    setOpen(false)
-  }
-
-  return (
-    <div style={{ position: "relative" }}>
-      <div style={{ position: "relative" }}>
-        <input value={value} onChange={(e) => handleInput(e.target.value)} placeholder={placeholder ?? "Start typing address…"} style={{ ...inputSt }} onFocus={() => results.length > 0 && setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} autoComplete="off" />
-        {loading && <span style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", fontSize: "0.65rem", color: "var(--muted)" }}>searching…</span>}
-      </div>
-      {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 200, background: "rgba(255,255,255,0.99)", border: "1px solid rgba(99,102,241,0.4)", borderRadius: "10px", overflow: "hidden", boxShadow: "0 12px 40px rgba(0,0,0,0.7)" }}>
-          {results.map((f, i) => (
-            <button key={`${f.properties.osm_id}-${i}`} onMouseDown={() => pick(f)} style={{ display: "block", width: "100%", textAlign: "left", padding: "0.6rem 0.875rem", background: "none", border: "none", color: "var(--text)", fontSize: "0.78rem", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.06)", fontFamily: "'Inter',sans-serif", lineHeight: 1.4 }}>
-              <span style={{ fontSize: "0.7rem" }}>📍 </span>{parsePhoton(f).display}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function FamilyTreeCard({ name, subtitle, color, icon }: { name: string; subtitle: string; color: string; icon: string }) {
   return (
@@ -196,6 +102,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
 
   const hasSpouse = draft.familyType !== "single_parent"
+  const countryHint = draft.addressCountry || "Canada"
   function sf<K extends keyof typeof draft>(key: K, val: (typeof draft)[K]) { setDraft((p) => ({ ...p, [key]: val })) }
   function sk(i: number, key: keyof EditKid, val: string) { setEditKids((prev) => prev.map((k, idx) => idx === i ? { ...k, [key]: val } : k)) }
   function sp(i: number, key: keyof EditPet, val: string) { setEditPets((prev) => prev.map((p, idx) => idx === i ? { ...p, [key]: val } : p)) }
@@ -438,7 +345,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
             {draft.workType && draft.workType !== "wfh" && (
               <div style={fieldRowStyle}>
                 <label style={fieldLabelStyle}>Work Address <span style={{ fontSize: "0.65rem", fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#818cf8" }}>— search to auto-fill</span></label>
-                <AddressSearch simpleMode value={draft.workAddress} onChange={(v) => sf("workAddress", v)} onSelectSimple={(v) => sf("workAddress", v)} placeholder="Search office address…" />
+                <AddressSearch simpleMode countryHint={countryHint} value={draft.workAddress} onChange={(v) => sf("workAddress", v)} onSelectSimple={(v) => sf("workAddress", v)} placeholder="Search office address…" />
               </div>
             )}
           </SettingsSection>
@@ -460,7 +367,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
               {draft.spouseWorkType && draft.spouseWorkType !== "wfh" && (
                 <div style={fieldRowStyle}>
                   <label style={fieldLabelStyle}>Work Address <span style={{ fontSize: "0.65rem", fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#818cf8" }}>— search to auto-fill</span></label>
-                  <AddressSearch simpleMode value={draft.spouseWorkAddress} onChange={(v) => sf("spouseWorkAddress", v)} onSelectSimple={(v) => sf("spouseWorkAddress", v)} placeholder="Search office address…" />
+                  <AddressSearch simpleMode countryHint={countryHint} value={draft.spouseWorkAddress} onChange={(v) => sf("spouseWorkAddress", v)} onSelectSimple={(v) => sf("spouseWorkAddress", v)} placeholder="Search office address…" />
                 </div>
               )}
             </SettingsSection>
@@ -472,6 +379,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
           <div style={fieldRowStyle}>
             <label style={fieldLabelStyle}>Street Address <span style={{ fontSize: "0.65rem", fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#818cf8" }}>— search to auto-fill</span></label>
             <AddressSearch
+              countryHint={countryHint}
               value={draft.addressStreet}
               onChange={(v) => sf("addressStreet", v)}
               onSelect={({ street, city, province, postal, country }) => {
@@ -521,7 +429,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                   <div><label style={fieldLabelStyle}>Daycare / Nursery</label><input value={kid.daycareName} placeholder="Name (optional)" onChange={(e) => sk(i, "daycareName", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} /></div>
                   <div>
                     <label style={fieldLabelStyle}>Daycare Address</label>
-                    <AddressSearch simpleMode value={kid.daycareAddress} onChange={(v) => sk(i, "daycareAddress", v)} onSelectSimple={(v) => sk(i, "daycareAddress", v)} placeholder="Search address…" />
+                    <AddressSearch simpleMode countryHint={countryHint} value={kid.daycareAddress} onChange={(v) => sk(i, "daycareAddress", v)} onSelectSimple={(v) => sk(i, "daycareAddress", v)} placeholder="Search address…" />
                   </div>
                 </div>
               </div>
