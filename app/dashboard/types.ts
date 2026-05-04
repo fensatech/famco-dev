@@ -27,6 +27,7 @@ export interface ScannedEventRow {
   start_time: string | null; end_time: string | null
   event_type: string; organization_name: string | null
   organization_type: string | null; source_from: string; snippet: string
+  related_member_name: string | null; related_member_type: "adult" | "child" | "pet" | "family" | null
   kid_name: string | null; grade: string | null; school_name: string | null
   special_instructions: string | null; urgency: string
   auto_add_to_calendar: boolean; calendar_title: string | null; ai_processed: boolean

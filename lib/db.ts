@@ -43,6 +43,8 @@ export async function ensureRuntimeSchema() {
       ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS vendor TEXT;
       ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS amount NUMERIC(10,2);
       ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS recurrence TEXT;
+      ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS related_member_name TEXT;
+      ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS related_member_type TEXT;
 
       ALTER TABLE scanned_events DROP CONSTRAINT IF EXISTS scanned_events_event_type_check;
       ALTER TABLE scanned_events ADD CONSTRAINT scanned_events_event_type_check
@@ -50,6 +52,9 @@ export async function ensureRuntimeSchema() {
           'calendar_invite','appointment','school_event','medical','field_trip',
           'no_school','special_day','activity','recital','subscription','invoice','bill','other'
         ));
+      ALTER TABLE scanned_events DROP CONSTRAINT IF EXISTS scanned_events_related_member_type_check;
+      ALTER TABLE scanned_events ADD CONSTRAINT scanned_events_related_member_type_check
+        CHECK (related_member_type IN ('adult', 'child', 'pet', 'family') OR related_member_type IS NULL);
 
       CREATE TABLE IF NOT EXISTS family_invites (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -325,6 +330,8 @@ export async function saveScannedEvents(
     organization_type: string | null
     source_from: string
     snippet: string
+    related_member_name?: string | null
+    related_member_type?: "adult" | "child" | "pet" | "family" | null
     kid_name?: string | null
     grade?: string | null
     school_name?: string | null
@@ -346,9 +353,9 @@ export async function saveScannedEvents(
       `INSERT INTO scanned_events
          (profile_id, gmail_message_id, title, event_date, start_time, end_time,
           event_type, organization_name, organization_type, source_from, snippet,
-          kid_name, grade, school_name, special_instructions, urgency,
+          related_member_name, related_member_type, kid_name, grade, school_name, special_instructions, urgency,
           auto_add_to_calendar, calendar_title, ai_processed, vendor, amount, recurrence)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
        ON CONFLICT (profile_id, gmail_message_id) DO UPDATE SET
          title = EXCLUDED.title,
          event_date = COALESCE(EXCLUDED.event_date, scanned_events.event_date),
@@ -358,6 +365,8 @@ export async function saveScannedEvents(
          organization_name = EXCLUDED.organization_name,
          organization_type = EXCLUDED.organization_type,
          snippet = EXCLUDED.snippet,
+         related_member_name = COALESCE(EXCLUDED.related_member_name, scanned_events.related_member_name),
+         related_member_type = COALESCE(EXCLUDED.related_member_type, scanned_events.related_member_type),
          kid_name = COALESCE(EXCLUDED.kid_name, scanned_events.kid_name),
          grade = COALESCE(EXCLUDED.grade, scanned_events.grade),
          school_name = COALESCE(EXCLUDED.school_name, scanned_events.school_name),
@@ -374,6 +383,7 @@ export async function saveScannedEvents(
         householdRootId, e.gmail_message_id, e.title, e.event_date ?? null,
         e.start_time ?? null, e.end_time ?? null,
         e.event_type, e.organization_name, e.organization_type, e.source_from, e.snippet,
+        e.related_member_name ?? null, e.related_member_type ?? null,
         e.kid_name ?? null, e.grade ?? null, e.school_name ?? null,
         e.special_instructions ?? null, e.urgency ?? "normal",
         e.auto_add_to_calendar ?? false, e.calendar_title ?? null, e.ai_processed ?? false,

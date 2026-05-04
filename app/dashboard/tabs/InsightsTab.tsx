@@ -6,6 +6,7 @@ import type { ScannedEventRow } from "../types"
 import { todayStr, fmtTime, addDays } from "../lib/date"
 import { EVENT_TYPE_ICON, EVENT_TYPE_LABEL } from "../lib/events"
 import { INSIGHT_CATEGORIES, sortEvents, insightsDaysUntil, insightsFmtDate } from "../lib/insights"
+import { getScannedEventMemberName, getScannedEventMemberType } from "../lib/scanned-event-members"
 import { savePillStyle, sectionCard } from "../styles"
 import { Empty } from "../components/shared/Empty"
 
@@ -82,6 +83,16 @@ function EventCard({
   const isUpcoming = !!dateStr && dateStr >= today
   const countdown = dateStr && isUpcoming ? insightsDaysUntil(dateStr, today) : null
   const handled = action?.status === "handled"
+  const memberName = getScannedEventMemberName(ev)
+  const memberType = getScannedEventMemberType(ev)
+  const memberBadgeColor =
+    memberType === "adult"
+      ? "#818cf8"
+      : memberType === "pet"
+        ? "#fbbf24"
+        : memberType === "family"
+          ? "#34d399"
+          : "#f472b6"
 
   return (
     <div
@@ -102,7 +113,7 @@ function EventCard({
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.25rem" }}>
             <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{ev.calendar_title ?? ev.title}</span>
             {ev.urgency === "high" && <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(248,113,113,0.2)", color: "#f87171", border: "1px solid rgba(248,113,113,0.4)" }}>URGENT</span>}
-            {ev.kid_name && <span style={{ fontSize: "0.65rem", fontWeight: 600, padding: "0.05rem 0.4rem", borderRadius: "20px", background: "rgba(244,114,182,0.15)", color: "#f472b6", border: "1px solid rgba(244,114,182,0.3)" }}>{ev.kid_name}{ev.grade ? ` · ${ev.grade}` : ""}</span>}
+            {memberName && <span style={{ fontSize: "0.65rem", fontWeight: 600, padding: "0.05rem 0.4rem", borderRadius: "20px", background: `${memberBadgeColor}22`, color: memberBadgeColor, border: `1px solid ${memberBadgeColor}44` }}>{memberName}{memberType === "child" && ev.grade ? ` · ${ev.grade}` : ""}</span>}
             {showType && <span style={{ fontSize: "0.6rem", fontWeight: 600, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(255,255,255,0.07)", color: "var(--muted)", border: "1px solid var(--border)" }}>{EVENT_TYPE_LABEL[ev.event_type] ?? ev.event_type}</span>}
             {handled && <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.28)" }}>HANDLED</span>}
             {action?.assigned_to && <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.05rem 0.35rem", borderRadius: "20px", background: "rgba(99,102,241,0.12)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.28)" }}>Assigned: {action.assigned_to}</span>}
@@ -202,7 +213,7 @@ interface Props {
   assigneeOptions: string[]
   provider: string
   onRefresh: () => Promise<{ error?: string }>
-  onAddEvent: (title: string, date: string, time: string | null) => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null) => Promise<boolean>
   onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
   onAddReminder: (data: { source_type: "scanned_event"; source_id: string; title: string; note?: string | null; remind_at: string }) => Promise<boolean>
   onUpdateAction: (scannedEventId: string, data: { status?: "new" | "handled"; assigned_to?: string | null; last_action?: "calendar" | "task" | "reminder" | "handled" | null }) => Promise<boolean>
@@ -229,7 +240,13 @@ export function InsightsTab({ scannedEvents, insightActions, assigneeOptions, pr
   }
 
   async function handleAddToCalendar(ev: ScannedEventRow): Promise<void> {
-    const ok = await onAddEvent(ev.calendar_title ?? ev.title, String(ev.event_date ?? "").slice(0, 10), ev.start_time ?? null)
+    const memberName = getScannedEventMemberName(ev)
+    const ok = await onAddEvent(
+      ev.calendar_title ?? ev.title,
+      String(ev.event_date ?? "").slice(0, 10),
+      ev.start_time ?? null,
+      memberName && memberName !== "Family" ? memberName : null,
+    )
     if (ok) {
       setAddedToCalendar((prev) => new Set(prev).add(ev.id))
       await onUpdateAction(ev.id, { last_action: "calendar" })
@@ -237,7 +254,15 @@ export function InsightsTab({ scannedEvents, insightActions, assigneeOptions, pr
   }
 
   async function handleAddAsTask(ev: ScannedEventRow): Promise<void> {
-    const ok = await onAddTask(ev.calendar_title ?? ev.title)
+    const memberName = getScannedEventMemberName(ev)
+    const memberType = getScannedEventMemberType(ev)
+    const ok = await onAddTask(
+      ev.calendar_title ?? ev.title,
+      undefined,
+      undefined,
+      undefined,
+      memberType === "adult" ? memberName ?? undefined : undefined,
+    )
     if (ok) {
       setAddedAsTask((prev) => new Set(prev).add(ev.id))
       await onUpdateAction(ev.id, { last_action: "task" })

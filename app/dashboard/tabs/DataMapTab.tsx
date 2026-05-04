@@ -4,6 +4,7 @@ import type { FamilyFact } from "@/types"
 import { FACT_GROUPS, PREDICATE_META } from "@/lib/facts"
 import type { KidRow, ProfileData, ScannedEventRow } from "../types"
 import { todayStr } from "../lib/date"
+import { getScannedEventMemberName, getScannedEventMemberType } from "../lib/scanned-event-members"
 import { memberColor } from "../lib/events"
 
 function FactTag({
@@ -281,12 +282,13 @@ export function DataMapTab({ profile, kids, facts, scannedEvents, onDeleteFact, 
   const today = todayStr()
 
   function upcomingFor(memberName: string, isParent: boolean): number {
-    const kidNames = new Set(kids.map((kid) => kid.name.toLowerCase()))
     return scannedEvents.filter((event) => {
       if (!event.event_date || String(event.event_date).slice(0, 10) < today) return false
-      if (isParent) return !event.kid_name || !kidNames.has((event.kid_name ?? "").toLowerCase())
+      const relatedName = getScannedEventMemberName(event)
+      const relatedType = getScannedEventMemberType(event)
+      if (isParent) return relatedType !== "child"
       if (memberName === "family") return false
-      return (event.kid_name ?? "").toLowerCase() === memberName.toLowerCase()
+      return (relatedName ?? "").toLowerCase() === memberName.toLowerCase()
     }).length
   }
 

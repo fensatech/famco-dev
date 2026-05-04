@@ -2,13 +2,14 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { scanEmails } from "@/lib/gmail"
 import { scanOutlookEmails } from "@/lib/outlook"
+import type { HouseholdScanContext } from "@/lib/household-scan"
 import {
   saveScannedEvents, saveScannedOrganizations,
-  getKids, createEvent, getLastScanDate, getExistingMessageIds,
+  getKids, getPets, createEvent, getLastScanDate, getExistingMessageIds,
   upsertFacts, getFamilyFacts, updateFactStatus, getScannedEvents, getProfile, ensureRuntimeSchema,
 } from "@/lib/db"
 import { seedFactsFromEvents, resolveConflicts, aiExtractFacts } from "@/lib/facts"
-import type { Kid } from "@/types"
+import type { Kid, Pet } from "@/types"
 import Anthropic from "@anthropic-ai/sdk"
 
 function isAuthError(message: string) {
@@ -23,6 +24,59 @@ function isAuthError(message: string) {
     message.includes("access_denied") ||
     message.includes("invalid_token")
   )
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(trimmed)
+  }
+  return result
+}
+
+function buildHouseholdScanContext(
+  profile: Awaited<ReturnType<typeof getProfile>>,
+  kids: Kid[],
+  pets: Pet[],
+): HouseholdScanContext {
+  const parentName = `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim()
+  const spouseName = `${profile?.spouse_first_name ?? ""} ${profile?.spouse_last_name ?? ""}`.trim()
+  const partnerName = profile?.partner_name?.trim() ?? ""
+  const adultNames = uniqueStrings([parentName, spouseName, partnerName])
+
+  return {
+    city: profile?.city ?? null,
+    timezone: profile?.timezone ?? null,
+    members: [
+      ...adultNames.map((name) => ({
+        name,
+        type: "adult" as const,
+        first_name: name.split(" ").find(Boolean) ?? null,
+      })),
+      ...kids.map((kid) => ({
+        name: kid.name,
+        type: "child" as const,
+        first_name: kid.first_name ?? kid.name.split(" ").find(Boolean) ?? null,
+        grade: kid.grade ?? null,
+        school_name: kid.school_name ?? null,
+        school_address: kid.school_address ?? null,
+        daycare_name: kid.daycare_name ?? null,
+        daycare_address: kid.daycare_address ?? null,
+      })),
+      ...pets.map((pet) => ({
+        name: pet.name,
+        type: "pet" as const,
+        first_name: pet.name.split(" ").find(Boolean) ?? null,
+        animal_type: pet.animal_type ?? null,
+      })),
+    ],
+  }
 }
 
 export async function POST() {
@@ -41,20 +95,23 @@ export async function POST() {
   try {
     await ensureRuntimeSchema()
 
-    const [kids, lastScanDate, existingIds, profile] = await Promise.all([
+    const [kids, pets, lastScanDate, existingIds, profile] = await Promise.all([
       getKids(session.profileId),
+      getPets(session.profileId).catch(() => []),
       getLastScanDate(session.profileId),
       getExistingMessageIds(session.profileId),
       getProfile(session.profileId),
     ])
 
-    const kidInfos = kids.map((k: Kid) => ({ name: k.name, grade: k.grade ?? null, school_name: k.school_name ?? null }))
+    const householdContext = buildHouseholdScanContext(profile, kids, pets)
     const isFirstScan = lastScanDate === null
+    const parentName = profile ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "Parent" : "Parent"
+    const spouseName = profile ? `${profile.spouse_first_name ?? ""} ${profile.spouse_last_name ?? ""}`.trim() : ""
 
     const result =
       provider === "google"
-        ? await scanEmails(session.accessToken, kidInfos, lastScanDate, existingIds)
-        : await scanOutlookEmails(session.accessToken)
+        ? await scanEmails(session.accessToken, householdContext, lastScanDate, existingIds)
+        : await scanOutlookEmails(session.accessToken, householdContext)
 
     await Promise.all([
       saveScannedEvents(session.profileId, result.events),
@@ -71,9 +128,9 @@ export async function POST() {
     if (anthropicKey && result.rawEmails && result.rawEmails.length > 0) {
       try {
         const client = new Anthropic({ apiKey: anthropicKey })
-        const parentName = profile ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() : "Parent"
         const members = [
           { name: parentName, type: "parent" as const },
+          ...(spouseName ? [{ name: spouseName, type: "parent" as const }] : []),
           ...kids.map((k: Kid) => ({ name: k.name, type: "kid" as const, dob: k.dob ?? null, school_name: k.school_name ?? null, grade: k.grade ?? null })),
         ]
         const emailsForAI = result.rawEmails.slice(0, 15)
@@ -92,8 +149,11 @@ export async function POST() {
     // 2. Seed facts from ALL scanned_events (idempotent — upsert deduplicates)
     //    On first scan this bootstraps the graph from event-level data instantly
     const allEvents = await getScannedEvents(session.profileId)
-    const kidMembers = kids.map((k: Kid) => ({ name: k.name, type: "kid" as const, dob: k.dob ?? null, school_name: k.school_name ?? null, grade: k.grade ?? null }))
-    const seededFacts = seedFactsFromEvents(allEvents, kidMembers)
+    const seededFacts = seedFactsFromEvents(allEvents, [
+      { name: parentName, type: "parent" as const },
+      ...(spouseName ? [{ name: spouseName, type: "parent" as const }] : []),
+      ...kids.map((k: Kid) => ({ name: k.name, type: "kid" as const, dob: k.dob ?? null, school_name: k.school_name ?? null, grade: k.grade ?? null })),
+    ])
     if (seededFacts.length > 0) await upsertFacts(session.profileId, seededFacts)
 
     // 3. Run conflict resolution on the full fact graph
@@ -116,6 +176,7 @@ export async function POST() {
           start_time: e.start_time ?? null,
           end_time: e.end_time ?? null,
           description: e.special_instructions ?? null,
+          member_name: e.related_member_name && e.related_member_name !== "Family" ? e.related_member_name : null,
         })
         auto_added++
       } catch { /* ignore duplicate constraint errors */ }

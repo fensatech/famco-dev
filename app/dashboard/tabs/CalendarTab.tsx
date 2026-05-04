@@ -5,6 +5,7 @@ import type { Event, Task } from "@/lib/db"
 import type { CalendarMemberOption, GCalEvent, ScannedEventRow } from "../types"
 import { todayStr } from "../lib/date"
 import { fmtTime } from "../lib/date"
+import { getScannedEventMemberName, getScannedEventMemberType, matchesScannedEventMember } from "../lib/scanned-event-members"
 import { navArrow, savePillStyle, fieldLabelStyle, inputSt } from "../styles"
 import { AddEventModal } from "../components/modals/AddEventModal"
 import type { CoParentingSchedule, CoParentingOverride } from "../types"
@@ -189,14 +190,14 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
   }
 
   function filteredScanned(evts: ScannedEventRow[]) {
-    if (!memberFilter) return evts
-    if (memberFilter === "Family") return evts.filter((e) => !e.kid_name)
-    return evts.filter((e) => (e.kid_name ?? "").toLowerCase() === memberFilter.toLowerCase())
+    return evts.filter((event) => matchesScannedEventMember(event, memberFilter))
   }
 
-  function kidColor(kidName: string | null) {
-    if (!kidName) return "#818cf8"
-    return memberOptions.find((member) => member.name.toLowerCase() === (kidName ?? "").toLowerCase())?.color ?? "#60a5fa"
+  function scannedEventColor(event: ScannedEventRow) {
+    const memberName = getScannedEventMemberName(event)
+    const memberType = getScannedEventMemberType(event)
+    if (memberType === "family" || !memberName) return "#818cf8"
+    return memberOptions.find((member) => member.name.toLowerCase() === memberName.toLowerCase())?.color ?? "#60a5fa"
   }
 
   function filteredGcalEvents(evts: GCalEvent[]) {
@@ -479,7 +480,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
               : <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
                   {showEvs && todayEvents.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} onUpdate={onUpdateEvent} kids={memberOptions} />)}
                   {showEvs && gcalEventsForDate(today).map((ev) => <GCalEventRow key={ev.id ?? ev.title} event={ev} onClick={() => openGcalModal(ev)} />)}
-                  {showEvs && todayScanned.map((ev) => <ScannedEventBlock key={ev.id} ev={ev} color={kidColor(ev.kid_name)} />)}
+                  {showEvs && todayScanned.map((ev) => <ScannedEventBlock key={ev.id} ev={ev} color={scannedEventColor(ev)} />)}
                   {showTasks && todayTasks.map((t) => (
                     <div key={t.id} onClick={() => setSelectedCalTask(t)} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 0.875rem", background: "rgba(244,114,182,0.06)", borderLeft: "3px solid #f472b6", borderRadius: "10px", border: "1px solid rgba(244,114,182,0.2)", cursor: "pointer" }}>
                       <span style={{ fontSize: "0.875rem" }}>✅</span>
@@ -620,7 +621,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                           </div>
                         })}
                         {scEvs.map((ev) => {
-                          const c = kidColor(ev.kid_name); const top = toY(ev.start_time); const h = Math.max(22, toY(ev.end_time) - top || HOUR_H / 2)
+                          const c = scannedEventColor(ev); const top = toY(ev.start_time); const h = Math.max(22, toY(ev.end_time) - top || HOUR_H / 2)
                           return <div key={ev.id} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: `${c}22`, borderLeft: `3px solid ${c}`, borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "default", zIndex: 1 }}>
                             {ev.start_time && <div style={{ fontSize: "0.55rem", color: c, fontWeight: 700 }}>{fmtTime(ev.start_time)}</div>}
                             <div style={{ fontSize: "0.6rem", color: c, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.calendar_title ?? ev.title}</div>
@@ -672,7 +673,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   const allEvs = [
                     ...(showMEvs ? eventsForDate(day).map((ev) => ({ key: ev.id, time: ev.start_time, label: ev.title, color: "#34d399", onClick: undefined as (() => void) | undefined })) : []),
                     ...(showMEvs ? gcalEventsForDate(ds).map((ev) => ({ key: ev.id ?? ev.title, time: !ev.allDay && ev.start?.includes("T") ? ev.start.split("T")[1]?.slice(0, 5) : null, label: ev.title, color: "#818cf8", onClick: () => openGcalModal(ev) })) : []),
-                    ...(showMEvs ? filteredScanned(scannedForDate(ds)).map((ev) => ({ key: ev.id, time: ev.start_time, label: ev.calendar_title ?? ev.title, color: kidColor(ev.kid_name), onClick: undefined as (() => void) | undefined })) : []),
+                    ...(showMEvs ? filteredScanned(scannedForDate(ds)).map((ev) => ({ key: ev.id, time: ev.start_time, label: ev.calendar_title ?? ev.title, color: scannedEventColor(ev), onClick: undefined as (() => void) | undefined })) : []),
                     ...(showMTasks ? tasksForDate(ds).map((t) => ({ key: t.id, time: t.due_time, label: `✅ ${t.title}`, color: "#f472b6", onClick: () => setSelectedCalTask(t) })) : []),
                   ]
                   const visible = allEvs.slice(0, LIMIT)

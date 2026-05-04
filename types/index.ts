@@ -136,6 +136,8 @@ export interface ScannedEvent {
   organization_type: "school" | "medical_clinic" | "dental" | "sports" | "pharmacy" | null
   source_from: string
   snippet: string
+  related_member_name: string | null
+  related_member_type: "adult" | "child" | "pet" | "family" | null
   kid_name: string | null
   grade: string | null
   school_name: string | null

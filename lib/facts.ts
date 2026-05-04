@@ -125,6 +125,8 @@ interface ScannedEventLike {
   event_type: string
   organization_type: string | null
   organization_name: string | null
+  related_member_name: string | null
+  related_member_type: "adult" | "child" | "pet" | "family" | null
   school_name: string | null
   grade: string | null
   kid_name: string | null
@@ -155,15 +157,25 @@ export function seedFactsFromEvents(
 
   for (const e of events) {
     const mid = e.gmail_message_id
+    const matchedKidName =
+      e.kid_name && kidNames.has(e.kid_name.toLowerCase())
+        ? e.kid_name
+        : e.related_member_type === "child" && e.related_member_name && kidNames.has(e.related_member_name.toLowerCase())
+          ? e.related_member_name
+          : null
+    const matchedAdultName =
+      e.related_member_type === "adult" && e.related_member_name
+        ? e.related_member_name
+        : parentName
 
     // School attendance
-    if (SCHOOL_EVENT_TYPES.includes(e.event_type) && e.kid_name && kidNames.has(e.kid_name.toLowerCase())) {
+    if (SCHOOL_EVENT_TYPES.includes(e.event_type) && matchedKidName) {
       const school = (e.school_name ?? e.organization_name ?? "").trim()
       if (school) {
-        facts.push({ gmail_message_id: mid, subject: e.kid_name, subject_type: "kid", predicate: "attends_school", object: school, confidence: 0.72 })
+        facts.push({ gmail_message_id: mid, subject: matchedKidName, subject_type: "kid", predicate: "attends_school", object: school, confidence: 0.72 })
       }
       if (e.grade) {
-        facts.push({ gmail_message_id: mid, subject: e.kid_name, subject_type: "kid", predicate: "current_grade", object: e.grade, confidence: 0.78 })
+        facts.push({ gmail_message_id: mid, subject: matchedKidName, subject_type: "kid", predicate: "current_grade", object: e.grade, confidence: 0.78 })
         // Also derive institution grade range hint from grade + school
         if (school) {
           facts.push({ gmail_message_id: mid, subject: school, subject_type: "institution", predicate: "serves_grades", object: e.grade, confidence: 0.65 })
@@ -172,31 +184,31 @@ export function seedFactsFromEvents(
     }
 
     // Activity participation — only for emails directly attributed to a specific kid
-    if (ACTIVITY_EVENT_TYPES.includes(e.event_type) && e.organization_name && e.kid_name && kidNames.has(e.kid_name.toLowerCase())) {
+    if (ACTIVITY_EVENT_TYPES.includes(e.event_type) && e.organization_name && matchedKidName) {
       const orgName = e.organization_name.trim()
       // Skip if the org name is already known as a school (prevents Education/Activities duplicate)
       if (knownSchoolNames.has(orgName.toLowerCase())) continue
       // A "First Last" pattern = person name → this is an instructor, not an activity
       const looksLikePerson = /^[A-Z][a-z]+([ '-][A-Z][a-z]+)+$/.test(orgName)
       const predicate: FactPredicate = looksLikePerson ? "taught_by" : "participates_in"
-      facts.push({ gmail_message_id: mid, subject: e.kid_name, subject_type: "kid", predicate, object: orgName, confidence: 0.70 })
+      facts.push({ gmail_message_id: mid, subject: matchedKidName, subject_type: "kid", predicate, object: orgName, confidence: 0.70 })
     }
 
     // Medical — doctor/clinic — assigned to parent if unattributed (parent manages family health)
     if (e.event_type === "medical" && e.organization_name) {
-      const subject = e.kid_name && kidNames.has(e.kid_name.toLowerCase()) ? e.kid_name : parentName
-      const subType: "kid" | "parent" = subject === parentName ? "parent" : "kid"
+      const subject = matchedKidName ?? matchedAdultName
+      const subType: "kid" | "parent" = matchedKidName ? "kid" : "parent"
       facts.push({ gmail_message_id: mid, subject, subject_type: subType, predicate: "sees_doctor", object: e.organization_name, confidence: 0.75 })
     }
 
     // Dental — assigned to parent (parent manages family dental)
     if (e.organization_type === "dental" && e.organization_name) {
-      facts.push({ gmail_message_id: mid, subject: parentName, subject_type: "parent", predicate: "sees_dentist", object: e.organization_name, confidence: 0.80 })
+      facts.push({ gmail_message_id: mid, subject: matchedAdultName, subject_type: "parent", predicate: "sees_dentist", object: e.organization_name, confidence: 0.80 })
     }
 
     // Pharmacy — assigned to parent
     if (e.organization_type === "pharmacy" && e.organization_name) {
-      facts.push({ gmail_message_id: mid, subject: parentName, subject_type: "parent", predicate: "uses_pharmacy", object: e.organization_name, confidence: 0.78 })
+      facts.push({ gmail_message_id: mid, subject: matchedAdultName, subject_type: "parent", predicate: "uses_pharmacy", object: e.organization_name, confidence: 0.78 })
     }
 
     // Subscriptions & bills — assigned to parent (parent pays)
@@ -204,7 +216,7 @@ export function seedFactsFromEvents(
       const freq = e.recurrence === "monthly" ? "/mo" : e.recurrence === "annual" ? "/yr" : ""
       const obj = e.amount ? `${e.vendor} $${Number(e.amount).toFixed(2)}${freq}` : e.vendor
       const predicate: FactPredicate = e.event_type === "subscription" ? "subscribes_to" : "pays_bill"
-      facts.push({ gmail_message_id: mid, subject: parentName, subject_type: "parent", predicate, object: obj, confidence: 0.80 })
+      facts.push({ gmail_message_id: mid, subject: matchedAdultName, subject_type: "parent", predicate, object: obj, confidence: 0.80 })
     }
   }
 
