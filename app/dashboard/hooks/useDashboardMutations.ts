@@ -22,12 +22,12 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
     }
   }
 
-  async function addEvent(title: string, date: string, time: string | null): Promise<boolean> {
+  async function addEvent(title: string, date: string, time: string | null, memberName?: string | null): Promise<boolean> {
     setSaving(true)
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null }),
+      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null }),
     })
     if (res.ok) {
       const { event } = await res.json()

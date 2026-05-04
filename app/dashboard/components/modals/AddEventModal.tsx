@@ -1,23 +1,26 @@
 "use client"
 import { useState } from "react"
-import { inputSt, fieldLabelStyle, savePillStyle } from "../../styles"
+import type { CalendarMemberOption } from "../../types"
+import { inputSt, fieldLabelStyle } from "../../styles"
 import { todayStr } from "../../lib/date"
 
 interface Props {
-  onSave: (title: string, date: string, time: string | null) => void
+  onSave: (title: string, date: string, time: string | null, memberName?: string | null) => void
   onCancel: () => void
   saving: boolean
   initialDate?: string
+  memberOptions?: CalendarMemberOption[]
 }
 
-export function AddEventModal({ onSave, onCancel, saving, initialDate }: Props) {
+export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOptions = [] }: Props) {
   const [title, setTitle] = useState("")
   const [date, setDate] = useState(initialDate ?? todayStr())
   const [time, setTime] = useState("")
+  const [memberName, setMemberName] = useState("")
 
   function handleSave() {
     if (!title.trim() || !date) return
-    onSave(title.trim(), date, time || null)
+    onSave(title.trim(), date, time || null, memberName || null)
   }
 
   return (
@@ -43,6 +46,19 @@ export function AddEventModal({ onSave, onCancel, saving, initialDate }: Props) 
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem", colorScheme: "dark" }} />
             </div>
           </div>
+          {memberOptions.length > 0 && (
+            <div>
+              <label style={fieldLabelStyle}>Family Member</label>
+              <select value={memberName} onChange={(e) => setMemberName(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem", cursor: "pointer" }}>
+                <option value="">Family</option>
+                {memberOptions.map((member) => (
+                  <option key={`${member.kind}-${member.name}`} value={member.name}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.5rem" }}>
           <button onClick={onCancel} style={{ flex: 1, padding: "0.75rem", borderRadius: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.875rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Cancel</button>

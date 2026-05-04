@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect, useMemo } from "react"
 import type { Event, Task } from "@/lib/db"
-import type { Tab, ExpenseRow, KidRow, CoParentingSchedule, CoParentingOverride } from "../types"
+import type { Tab, ExpenseRow, KidRow, CoParentingSchedule, CoParentingOverride, CalendarMemberOption } from "../types"
 import type { Reminder } from "@/types"
 import { resolveParent, findNextExchange, formatExchangeDate } from "../lib/coparenting"
 import { todayStr, todayLabel, fmtTime } from "../lib/date"
@@ -19,8 +19,9 @@ interface Props {
   events: Event[]
   pendingTasks: Task[]
   reminders: Reminder[]
+  memberOptions: CalendarMemberOption[]
   assigneeOptions: string[]
-  onAddEvent: (title: string, date: string, time: string | null) => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null) => Promise<boolean>
   onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
   onToggleTask: (id: string, c: boolean) => void
   onDeleteTask: (id: string) => void
@@ -34,7 +35,7 @@ interface Props {
   coparentingOverrides?: CoParentingOverride[]
 }
 
-export function HomeTab({ firstName, kids, events, pendingTasks, reminders, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [] }: Props) {
+export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memberOptions, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [] }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [todayExpenses, setTodayExpenses] = useState<ExpenseRow[]>([])
@@ -59,8 +60,8 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, assi
   const cpNextExchange = cpSchedule ? findNextExchange(cpSchedule, coparentingOverrides, today) : null
   const cpAssignedKids = kids.filter((k) => (cpSchedule?.kid_ids ?? []).includes(k.id))
 
-  async function handleAddEvent(title: string, date: string, time: string | null) {
-    const ok = await onAddEvent(title, date, time)
+  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null) {
+    const ok = await onAddEvent(title, date, time, memberName)
     if (ok) setShowAddEvent(false)
   }
 
@@ -78,7 +79,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, assi
 
   return (
     <>
-      {showAddEvent && <AddEventModal onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} initialDate={today} />}
+      {showAddEvent && <AddEventModal memberOptions={memberOptions} onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} initialDate={today} />}
       {showAddTask && <AddTaskModal assigneeOptions={assigneeOptions} onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
 
       <div style={{ marginBottom: "2rem" }}>
@@ -184,7 +185,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, assi
             )
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {events.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} />)}
+                {events.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} kids={memberOptions} />)}
                 {todayTasks.map((t) => (
                   <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 0.75rem", background: "rgba(244,114,182,0.06)", borderLeft: "3px solid #f472b6", borderRadius: "10px", border: "1px solid rgba(244,114,182,0.2)" }}>
                     <span style={{ fontSize: "0.8rem" }}>✅</span>

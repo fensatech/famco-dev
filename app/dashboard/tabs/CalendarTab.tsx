@@ -2,10 +2,9 @@
 import { useState, useRef, useEffect } from "react"
 import { signOut } from "next-auth/react"
 import type { Event, Task } from "@/lib/db"
-import type { GCalEvent, KidRow, ScannedEventRow } from "../types"
+import type { CalendarMemberOption, GCalEvent, ScannedEventRow } from "../types"
 import { todayStr } from "../lib/date"
 import { fmtTime } from "../lib/date"
-import { memberColor } from "../lib/events"
 import { navArrow, savePillStyle, fieldLabelStyle, inputSt } from "../styles"
 import { AddEventModal } from "../components/modals/AddEventModal"
 import type { CoParentingSchedule, CoParentingOverride } from "../types"
@@ -21,10 +20,10 @@ interface Props {
   tasks: Task[]
   onDeleteEvent: (id: string) => void
   onUpdateEvent: (id: string, data: Partial<Event>) => void
-  onAddEvent: (title: string, date: string, time: string | null) => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null) => Promise<boolean>
   saving: boolean
   provider: string
-  kids: KidRow[]
+  memberOptions: CalendarMemberOption[]
   scannedEvents: ScannedEventRow[]
   gcalEvents: GCalEvent[]
   setGcalEvents: (e: GCalEvent[]) => void
@@ -36,8 +35,8 @@ interface Props {
   coparentingOverrides?: CoParentingOverride[]
 }
 
-function IcsImportModal({ kids, importing, importResult, fileInputRef, onImport, onClose }: {
-  kids: KidRow[]
+function IcsImportModal({ memberOptions, importing, importResult, fileInputRef, onImport, onClose }: {
+  memberOptions: CalendarMemberOption[]
   importing: boolean
   importResult: { imported: number; skipped: number } | null
   fileInputRef: React.RefObject<HTMLInputElement | null>
@@ -48,7 +47,7 @@ function IcsImportModal({ kids, importing, importResult, fileInputRef, onImport,
   const [fileName, setFileName] = useState<string | null>(null)
   const [icsText, setIcsText] = useState<string | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
-  const allMembers = ["Family", ...kids.map((k) => k.name)]
+  const allMembers = [{ name: "Family", color: "#6b7280", kind: "family" as const }, ...memberOptions]
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -90,18 +89,18 @@ function IcsImportModal({ kids, importing, importResult, fileInputRef, onImport,
             <div>
               <label style={fieldLabelStyle}>1. Select family member *</label>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
-                {allMembers.map((m, i) => {
-                  const color = i === 0 ? "#6b7280" : memberColor(i)
-                  const active = selectedMember === m
+                {allMembers.map((m) => {
+                  const active = selectedMember === m.name
                   return (
-                    <button key={m} onClick={() => setSelectedMember(m)} style={{ padding: "0.35rem 0.875rem", borderRadius: "20px", border: `1.5px solid ${active ? color : "rgba(255,255,255,0.1)"}`, background: active ? `${color}22` : "rgba(255,255,255,0.04)", color: active ? color : "var(--muted)", fontSize: "0.8rem", fontWeight: active ? 700 : 400, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>{m}</button>
+                    <button key={`${m.kind}-${m.name}`} onClick={() => setSelectedMember(m.name)} style={{ padding: "0.35rem 0.875rem", borderRadius: "20px", border: `1.5px solid ${active ? m.color : "rgba(255,255,255,0.1)"}`, background: active ? `${m.color}22` : "rgba(255,255,255,0.04)", color: active ? m.color : "var(--muted)", fontSize: "0.8rem", fontWeight: active ? 700 : 400, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>{m.name}</button>
                   )
                 })}
               </div>
             </div>
             <div>
               <label style={fieldLabelStyle}>2. Choose .ics file *</label>
-              <div onClick={() => fileInputRef.current?.click()} style={{ marginTop: "0.5rem", border: `2px dashed ${fileName ? "rgba(129,140,248,0.4)" : "rgba(255,255,255,0.12)"}`, borderRadius: "12px", padding: "1.25rem", textAlign: "center", cursor: "pointer", background: fileName ? "rgba(129,140,248,0.06)" : "none", transition: "all 0.15s" }}>
+              <p style={{ marginTop: "0.35rem", color: "#6366f1", fontSize: "0.74rem", fontWeight: 700 }}>Click to browse and import calendar events</p>
+              <div onClick={() => fileInputRef.current?.click()} style={{ marginTop: "0.5rem", border: `2px dashed ${fileName ? "rgba(129,140,248,0.45)" : "rgba(99,102,241,0.32)"}`, borderRadius: "12px", padding: "1.25rem", textAlign: "center", cursor: "pointer", background: fileName ? "rgba(129,140,248,0.08)" : "linear-gradient(135deg,rgba(99,102,241,0.08),rgba(192,132,252,0.08))", transition: "all 0.15s" }}>
                 {fileName
                   ? <p style={{ color: "#818cf8", fontWeight: 600, fontSize: "0.875rem" }}>📄 {fileName}</p>
                   : <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>Click to browse — only .ics files accepted</p>
@@ -126,7 +125,7 @@ function IcsImportModal({ kids, importing, importResult, fileInputRef, onImport,
   )
 }
 
-export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, kids, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, openSignal, coparentingSchedule, coparentingOverrides = [] }: Props) {
+export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, memberOptions, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, openSignal, coparentingSchedule, coparentingOverrides = [] }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [typeFilter, setTypeFilter] = useState<"all" | "events" | "tasks">("all")
   const [selectedCalTask, setSelectedCalTask] = useState<Task | null>(null)
@@ -182,7 +181,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
     setGcalSaving(false)
   }
 
-  const memberList = [{ name: "All", color: "#6b7280" }, ...kids.map((k, i) => ({ name: k.name, color: memberColor(i + 1) }))]
+  const memberList = [{ name: "All", color: "#6b7280" }, { name: "Family", color: "#818cf8" }, ...memberOptions.map((member) => ({ name: member.name, color: member.color }))]
   const scheduledScanned = scannedEvents.filter((e) => !!e.event_date && e.auto_add_to_calendar)
 
   function scannedForDate(ds: string) {
@@ -191,13 +190,18 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
 
   function filteredScanned(evts: ScannedEventRow[]) {
     if (!memberFilter) return evts
+    if (memberFilter === "Family") return evts.filter((e) => !e.kid_name)
     return evts.filter((e) => (e.kid_name ?? "").toLowerCase() === memberFilter.toLowerCase())
   }
 
   function kidColor(kidName: string | null) {
     if (!kidName) return "#818cf8"
-    const idx = kids.findIndex((k) => k.name.toLowerCase() === (kidName ?? "").toLowerCase())
-    return idx >= 0 ? memberColor(idx + 1) : "#60a5fa"
+    return memberOptions.find((member) => member.name.toLowerCase() === (kidName ?? "").toLowerCase())?.color ?? "#60a5fa"
+  }
+
+  function filteredGcalEvents(evts: GCalEvent[]) {
+    if (!memberFilter || memberFilter === "Family") return evts
+    return []
   }
 
   useEffect(() => {
@@ -228,7 +232,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
   const today = todayStr()
 
   function gcalEventsForDate(ds: string) {
-    return gcalEvents.filter((e) => e.start && (e.start.split("T")[0] === ds || e.start === ds))
+    return filteredGcalEvents(gcalEvents).filter((e) => e.start && (e.start.split("T")[0] === ds || e.start === ds))
   }
 
   function getWeekDays() {
@@ -248,15 +252,21 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
 
   function eventsForDate(d: Date) {
     const ds = d.toISOString().split("T")[0]
-    return events.filter((e) => e.event_date === ds)
+    const dateEvents = events.filter((e) => e.event_date === ds)
+    if (!memberFilter) return dateEvents
+    if (memberFilter === "Family") return dateEvents.filter((e) => !e.member_name)
+    return dateEvents.filter((e) => (e.member_name ?? "").toLowerCase() === memberFilter.toLowerCase())
   }
 
   function tasksForDate(ds: string) {
-    return tasks.filter((t) => !t.completed && t.due_date === ds)
+    const dateTasks = tasks.filter((t) => !t.completed && t.due_date === ds)
+    if (!memberFilter) return dateTasks
+    if (memberFilter === "Family") return dateTasks.filter((t) => !t.assignee_name)
+    return dateTasks.filter((t) => (t.assignee_name ?? "").toLowerCase() === memberFilter.toLowerCase())
   }
 
-  async function handleAddEvent(title: string, date: string, time: string | null) {
-    const ok = await onAddEvent(title, date, time)
+  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null) {
+    const ok = await onAddEvent(title, date, time, memberName)
     if (ok) setShowAddEvent(false)
   }
 
@@ -362,11 +372,11 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
         </div>
       </div>
 
-      {showAddEvent && <AddEventModal onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} />}
+      {showAddEvent && <AddEventModal memberOptions={memberOptions} onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} />}
 
       {showImport && (
         <IcsImportModal
-          kids={kids}
+          memberOptions={memberOptions}
           importing={importing}
           importResult={importResult}
           fileInputRef={fileInputRef}
@@ -393,7 +403,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
       )}
 
       {/* Family member filter */}
-      {kids.length > 0 && (
+      {memberOptions.length > 0 && (
         <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "1rem" }}>
           {memberList.map((m) => {
             const active = m.name === "All" ? memberFilter === null : memberFilter === m.name
@@ -457,15 +467,17 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
         <div style={{ maxWidth: "600px" }}>
           <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "1rem" }}>Today · {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
           {(() => {
+            const todayDate = new Date(today)
+            const todayEvents = eventsForDate(todayDate)
             const todayScanned = filteredScanned(scannedForDate(today))
             const todayTasks = tasksForDate(today)
             const showEvs = typeFilter !== "tasks"
             const showTasks = typeFilter !== "events"
-            const totalItems = (showEvs ? events.length + gcalEventsForDate(today).length + todayScanned.length : 0) + (showTasks ? todayTasks.length : 0)
+            const totalItems = (showEvs ? todayEvents.length + gcalEventsForDate(today).length + todayScanned.length : 0) + (showTasks ? todayTasks.length : 0)
             return totalItems === 0
               ? <div style={{ textAlign: "center", padding: "2rem", color: "var(--muted)", fontSize: "0.875rem" }}>No {typeFilter === "tasks" ? "tasks" : typeFilter === "events" ? "events" : "events or tasks"} for today</div>
               : <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                  {showEvs && events.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} onUpdate={onUpdateEvent} kids={kids} />)}
+                  {showEvs && todayEvents.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} onUpdate={onUpdateEvent} kids={memberOptions} />)}
                   {showEvs && gcalEventsForDate(today).map((ev) => <GCalEventRow key={ev.id ?? ev.title} event={ev} onClick={() => openGcalModal(ev)} />)}
                   {showEvs && todayScanned.map((ev) => <ScannedEventBlock key={ev.id} ev={ev} color={kidColor(ev.kid_name)} />)}
                   {showTasks && todayTasks.map((t) => (

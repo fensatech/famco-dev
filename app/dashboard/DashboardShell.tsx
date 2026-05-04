@@ -18,7 +18,8 @@ import { DataMapTab } from "./tabs/DataMapTab"
 import { ExpensesTab } from "./tabs/ExpensesTab"
 import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
-import type { CoParentingSchedule, CoParentingOverride } from "./types"
+import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride } from "./types"
+import { memberColor } from "./lib/events"
 
 export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
   const [tab, setTab] = useState<Tab>("home")
@@ -96,6 +97,41 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
     ...householdMembers.map((member) => [member.first_name, member.last_name].filter(Boolean).join(" ")),
     ...kids.map((kid) => kid.name),
   ].map((name) => name.trim()).filter(Boolean).filter((name, index, list) => list.indexOf(name) === index)
+  const profileAdultName = [initialProfile.firstName, initialProfile.lastName].filter(Boolean).join(" ").trim()
+  const spouseName = [initialProfile.spouseFirstName, initialProfile.spouseLastName].filter(Boolean).join(" ").trim()
+  const adultMemberNames = [
+    profileAdultName,
+    ...householdMembers.map((member) => [member.first_name, member.last_name].filter(Boolean).join(" ").trim()),
+  ]
+    .filter(Boolean)
+    .filter((name, index, list) => list.findIndex((item) => item.toLowerCase() === name.toLowerCase()) === index)
+  const petMemberNames = pets.map((pet) => pet.name.trim()).filter(Boolean)
+  const calendarMemberOptions: CalendarMemberOption[] = [
+    ...adultMemberNames.map((name, index) => ({
+      name,
+      shortLabel: name.split(" ")[0] || name,
+      color: index === 0 ? "#818cf8" : "#f472b6",
+      kind: "adult" as const,
+    })),
+    ...(spouseName && !adultMemberNames.some((name) => name.toLowerCase() === spouseName.toLowerCase()) ? [{
+      name: spouseName,
+      shortLabel: spouseName.split(" ")[0] || spouseName,
+      color: "#f472b6",
+      kind: "adult" as const,
+    }] : []),
+    ...kids.map((kid, index) => ({
+      name: kid.name,
+      shortLabel: kid.firstName ?? kid.name.split(" ")[0] ?? kid.name,
+      color: memberColor(index + 1),
+      kind: "child" as const,
+    })),
+    ...petMemberNames.map((name) => ({
+      name,
+      shortLabel: name.split(" ")[0] || name,
+      color: "#fbbf24",
+      kind: "pet" as const,
+    })),
+  ].filter((member, index, list) => list.findIndex((item) => item.name.toLowerCase() === member.name.toLowerCase()) === index)
   const todayEvents = events.filter((e) => {
     const today = new Date().toISOString().split("T")[0]
     return e.event_date === today
@@ -205,6 +241,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               kids={kids}
               events={todayEvents}
               pendingTasks={pending}
+              memberOptions={calendarMemberOptions}
               onAddEvent={addEvent}
               onAddTask={addTask}
               onToggleTask={toggleTask}
@@ -231,7 +268,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               onAddEvent={addEvent}
               saving={saving}
               provider={provider}
-              kids={kids}
+              memberOptions={calendarMemberOptions}
               scannedEvents={scannedEvents}
               gcalEvents={gcalEvents}
               setGcalEvents={setGcalEvents}

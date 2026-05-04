@@ -43,6 +43,13 @@ export interface GCalEvent {
   allDay: boolean; location: string | null; description?: string | null
 }
 
+export interface CalendarMemberOption {
+  name: string
+  shortLabel: string
+  color: string
+  kind: "family" | "adult" | "child" | "pet"
+}
+
 export type Tab = "home" | "calendar" | "tasks" | "insights" | "data" | "expenses" | "coparenting" | "settings"
 export type CalView = "day" | "week" | "month"
 

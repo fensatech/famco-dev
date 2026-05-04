@@ -1,9 +1,8 @@
 "use client"
 import { useState } from "react"
 import type { Event } from "@/lib/db"
-import type { KidRow } from "../../types"
+import type { CalendarMemberOption } from "../../types"
 import { fmtTime } from "../../lib/date"
-import { memberColor } from "../../lib/events"
 import { inputSt, fieldLabelStyle } from "../../styles"
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -14,7 +13,7 @@ export function EventRow({ event, onDelete, onUpdate, kids }: {
   event: Event
   onDelete: (id: string) => void
   onUpdate?: (id: string, data: Partial<Event>) => void
-  kids?: KidRow[]
+  kids?: CalendarMemberOption[]
 }) {
   const [showDetail, setShowDetail] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -22,7 +21,7 @@ export function EventRow({ event, onDelete, onUpdate, kids }: {
   const [saving, setSaving] = useState(false)
   const isIcs = event.source === "ics_import"
   const mc = event.member_name && kids
-    ? (() => { const i = kids.findIndex((k) => k.name === event.member_name); return i >= 0 ? memberColor(i + 1) : "#818cf8" })()
+    ? kids.find((member) => member.name === event.member_name)?.color ?? "#818cf8"
     : "#34d399"
 
   async function save() {
@@ -71,7 +70,7 @@ export function EventRow({ event, onDelete, onUpdate, kids }: {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
                     <div><label style={fieldLabelStyle}>End Time</label><input type="time" value={draft.end_time} onChange={(e) => setDraft((d) => ({ ...d, end_time: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", colorScheme: "dark" }} /></div>
                     {kids && kids.length > 0 && (
-                      <div><label style={fieldLabelStyle}>Member</label><select value={draft.member_name} onChange={(e) => setDraft((d) => ({ ...d, member_name: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer" }}><option value="">Family</option>{kids.map((k) => <option key={k.id} value={k.name}>{k.name}</option>)}</select></div>
+                      <div><label style={fieldLabelStyle}>Member</label><select value={draft.member_name} onChange={(e) => setDraft((d) => ({ ...d, member_name: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer" }}><option value="">Family</option>{kids.map((k) => <option key={`${k.kind}-${k.name}`} value={k.name}>{k.name}</option>)}</select></div>
                     )}
                   </div>
                 </div>
