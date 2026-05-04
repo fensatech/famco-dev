@@ -45,6 +45,24 @@ const PET_TYPES = [
   { value: "other", label: "Other", icon: "🐾" },
 ]
 
+const GRADE_OPTIONS = [
+  "Preschool",
+  "Pre-K",
+  "Kindergarten",
+  "Grade 1",
+  "Grade 2",
+  "Grade 3",
+  "Grade 4",
+  "Grade 5",
+  "Grade 6",
+  "Grade 7",
+  "Grade 8",
+  "Grade 9",
+  "Grade 10",
+  "Grade 11",
+  "Grade 12",
+]
+
 function FamilyTreeCard({ name, subtitle, color, icon }: { name: string; subtitle: string; color: string; icon: string }) {
   return (
     <div style={{ background: `${color}12`, border: `1.5px solid ${color}35`, borderRadius: "16px", padding: "1rem 1.25rem", textAlign: "center", minWidth: "110px", maxWidth: "160px" }}>
@@ -423,7 +441,14 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem", marginBottom: "0.75rem" }}>
                   <div><label style={fieldLabelStyle}>School Name</label><input value={kid.schoolName} placeholder="e.g. Fairview School" onChange={(e) => sk(i, "schoolName", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} /></div>
-                  <div><label style={fieldLabelStyle}>Grade / Year</label><input value={kid.grade} placeholder="e.g. Grade 6" onChange={(e) => sk(i, "grade", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} /></div>
+                  <div>
+                    <label style={fieldLabelStyle}>Grade / Year</label>
+                    <select value={kid.grade} onChange={(e) => sk(i, "grade", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer", appearance: "none" }}>
+                      <option value="">Select grade</option>
+                      {kid.grade && !GRADE_OPTIONS.includes(kid.grade) ? <option value={kid.grade}>{kid.grade}</option> : null}
+                      {GRADE_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
                   <div><label style={fieldLabelStyle}>Daycare / Nursery</label><input value={kid.daycareName} placeholder="Name (optional)" onChange={(e) => sk(i, "daycareName", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} /></div>
