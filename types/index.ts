@@ -101,6 +101,31 @@ export interface Reminder {
   updated_at: string
 }
 
+export type FamilyDocumentCategory =
+  | "school"
+  | "medical"
+  | "insurance"
+  | "id"
+  | "household"
+  | "pet"
+  | "finance"
+  | "other"
+
+export interface FamilyDocument {
+  id: string
+  profile_id: string
+  title: string
+  file_name: string
+  storage_path: string
+  content_type: string | null
+  byte_size: number
+  category: FamilyDocumentCategory
+  member_name: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ScannedEventAction {
   id: string
   profile_id: string

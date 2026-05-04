@@ -1,5 +1,5 @@
 import { getPool } from "./supabase"
-import type { Profile, Kid, FamilyFact, HouseholdMember, RawFact, ScannedEventAction } from "@/types"
+import type { Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction } from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
 
@@ -31,6 +31,25 @@ export async function ensureRuntimeSchema() {
         dob DATE,
         created_at TIMESTAMPTZ DEFAULT now()
       );
+
+      CREATE TABLE IF NOT EXISTS family_documents (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        storage_path TEXT NOT NULL,
+        content_type TEXT,
+        byte_size BIGINT NOT NULL,
+        category TEXT NOT NULL
+          CHECK (category IN ('school','medical','insurance','id','household','pet','finance','other')),
+        member_name TEXT,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS family_documents_profile_idx
+        ON family_documents (profile_id, category, created_at DESC);
 
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS household_root_id TEXT;
       UPDATE profiles SET household_root_id = id WHERE household_root_id IS NULL;
@@ -295,6 +314,119 @@ export async function saveCalendar(data: {
      VALUES ($1, $2, $3, $4)`,
     [householdRootId, data.kid_id, data.filename, data.storage_path]
   )
+}
+
+export async function getDocuments(profileId: string): Promise<FamilyDocument[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<FamilyDocument & {
+    byte_size: string | number
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `SELECT * FROM family_documents WHERE profile_id = $1 ORDER BY created_at DESC`,
+    [householdRootId],
+  )
+  return rows.map((row) => ({
+    ...row,
+    byte_size: Number(row.byte_size),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }))
+}
+
+export async function createDocument(profileId: string, data: {
+  title: string
+  file_name: string
+  storage_path: string
+  content_type?: string | null
+  byte_size: number
+  category: FamilyDocument["category"]
+  member_name?: string | null
+  notes?: string | null
+}): Promise<FamilyDocument> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<FamilyDocument & {
+    byte_size: string | number
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `INSERT INTO family_documents
+      (profile_id, title, file_name, storage_path, content_type, byte_size, category, member_name, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING *`,
+    [
+      householdRootId,
+      data.title,
+      data.file_name,
+      data.storage_path,
+      data.content_type ?? null,
+      data.byte_size,
+      data.category,
+      data.member_name ?? null,
+      data.notes ?? null,
+    ],
+  )
+  const row = rows[0]
+  return {
+    ...row,
+    byte_size: Number(row.byte_size),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
+export async function getDocumentById(id: string, profileId: string): Promise<FamilyDocument | null> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<FamilyDocument & {
+    byte_size: string | number
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `SELECT * FROM family_documents WHERE id = $1 AND profile_id = $2`,
+    [id, householdRootId],
+  )
+  const row = rows[0]
+  if (!row) return null
+  return {
+    ...row,
+    byte_size: Number(row.byte_size),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
+export async function deleteDocument(id: string, profileId: string): Promise<FamilyDocument | null> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<FamilyDocument & {
+    byte_size: string | number
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `DELETE FROM family_documents WHERE id = $1 AND profile_id = $2 RETURNING *`,
+    [id, householdRootId],
+  )
+  const row = rows[0]
+  if (!row) return null
+  return {
+    ...row,
+    byte_size: Number(row.byte_size),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
+export async function getStoredFilePathsForAccount(profileId: string): Promise<string[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const [calendarResult, documentResult] = await Promise.all([
+    pool.query<{ storage_path: string }>(`SELECT storage_path FROM calendars WHERE profile_id = $1`, [householdRootId]),
+    pool.query<{ storage_path: string }>(`SELECT storage_path FROM family_documents WHERE profile_id = $1`, [householdRootId]),
+  ])
+  return [...calendarResult.rows, ...documentResult.rows].map((row) => row.storage_path)
 }
 
 export async function getLastScanDate(profileId: string): Promise<Date | null> {

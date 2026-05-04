@@ -133,7 +133,7 @@ export default function PrivacyPolicyPage() {
                   Events and appointments you create or import into your Famco calendar
                 </li>
                 <li>
-                  Uploaded files or documents you associate with calendar entries
+                  Uploaded files or documents you associate with calendar entries or store in the Famco document vault
                 </li>
               </ul>
 

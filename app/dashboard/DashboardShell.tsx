@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react"
 import type { Event, Task } from "@/lib/db"
 import type { FamilyFact, FamilyInvite, HouseholdMember, Reminder, ScannedEventAction } from "@/types"
-import type { DashboardShellProps, Tab, GCalEvent, KidRow, PetRow, ScannedEventRow } from "./types"
+import type { DashboardShellProps, Tab, DocumentRow, GCalEvent, KidRow, PetRow, ScannedEventRow } from "./types"
 import { useSessionTimeout } from "./hooks/useSessionTimeout"
 import { useInsightsRefresh } from "./hooks/useInsightsRefresh"
 import { useDashboardMutations } from "./hooks/useDashboardMutations"
@@ -16,13 +16,14 @@ import { TasksTab } from "./tabs/TasksTab"
 import { InsightsTab } from "./tabs/InsightsTab"
 import { DataMapTab } from "./tabs/DataMapTab"
 import { ExpensesTab } from "./tabs/ExpensesTab"
+import { DocumentsTab } from "./tabs/DocumentsTab"
 import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
 import { BillingTab } from "./tabs/BillingTab"
 import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride } from "./types"
 import { memberColor } from "./lib/events"
 
-export function DashboardShell({ profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
+export function DashboardShell({ profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
   const [tab, setTab] = useState<Tab>("home")
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -30,6 +31,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   const [pets, setPets] = useState<PetRow[]>(initialPets)
   const [scannedEvents, setScannedEvents] = useState<ScannedEventRow[]>(initialScannedEvents)
   const [facts, setFacts] = useState<FamilyFact[]>(initialFacts)
+  const [documents, setDocuments] = useState<DocumentRow[]>(initialDocuments)
   const [invites, setInvites] = useState<FamilyInvite[]>(initialInvites)
   const [householdMembers] = useState<HouseholdMember[]>(initialHouseholdMembers)
   const [insightActions, setInsightActions] = useState<ScannedEventAction[]>(initialInsightActions)
@@ -368,6 +370,14 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
 
           {tab === "expenses" && (
             <ExpensesTab scannedEvents={scannedEvents} />
+          )}
+
+          {tab === "documents" && (
+            <DocumentsTab
+              documents={documents}
+              memberOptions={calendarMemberOptions}
+              onDocumentsChange={setDocuments}
+            />
           )}
 
           {tab === "coparenting" && (

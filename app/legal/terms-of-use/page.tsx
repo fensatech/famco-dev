@@ -96,6 +96,7 @@ export default function TermsOfUsePage() {
                 <li>Google and Apple account sign-in (OAuth 2.0)</li>
                 <li>Email scanning to surface family-relevant information from your Gmail inbox</li>
                 <li>Calendar management and event coordination</li>
+                <li>Document vault storage for school, medical, and household records</li>
                 <li>Family profile and children profile management</li>
                 <li>Location and family preference settings</li>
               </ul>
