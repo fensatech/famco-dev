@@ -143,11 +143,20 @@ function EventCard({
 
           {expanded && (
             <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.6rem", alignItems: "center" }}>
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.6rem", alignItems: "center" }}
+              >
                 <label style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600 }}>Assign</label>
                 <select
                   value={action?.assigned_to ?? ""}
                   onChange={(e) => void doAssign(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                   style={{ minWidth: "160px", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.03)", color: "var(--text)", padding: "0.35rem 0.5rem", fontSize: "0.72rem", fontFamily: "'Inter',sans-serif" }}
                 >
                   <option value="">Unassigned</option>
