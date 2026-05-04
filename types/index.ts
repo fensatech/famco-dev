@@ -45,6 +45,7 @@ export interface Kid {
   last_name: string | null
   dob: string | null
   school_name: string | null
+  school_address: string | null
   grade: string | null
   daycare_name: string | null
   daycare_address: string | null

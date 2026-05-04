@@ -14,7 +14,7 @@ export interface ProfileData {
 
 export interface KidRow {
   id: string; name: string; firstName: string | null; lastName: string | null
-  dob: string | null; schoolName: string | null; grade: string | null
+  dob: string | null; schoolName: string | null; schoolAddress: string | null; grade: string | null
   daycareName: string | null; daycareAddress: string | null
 }
 

@@ -6,6 +6,7 @@ import type { ProfileData, KidRow, PetRow } from "../types"
 import { memberColor } from "../lib/events"
 import { inputSt, fieldLabelStyle, fieldRowStyle, savePillStyle } from "../styles"
 import { AddressSearch } from "../components/AddressSearch"
+import { SchoolSearch } from "../components/SchoolSearch"
 
 const TIMEZONES = [
   { value: "America/New_York",             label: "Eastern — New York, Boston" },
@@ -84,7 +85,7 @@ function SettingsSection({ title, icon, children, accent, bg }: { title: string;
   )
 }
 
-type EditKid = { id: string; firstName: string; lastName: string; dob: string; schoolName: string; grade: string; daycareName: string; daycareAddress: string }
+type EditKid = { id: string; firstName: string; lastName: string; dob: string; schoolName: string; schoolAddress: string; grade: string; daycareName: string; daycareAddress: string }
 type EditPet = { id: string; name: string; animalType: string; breed: string; dob: string }
 
 interface Props {
@@ -111,7 +112,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
     spousePhone: initialProfile.spousePhone, spouseEmail: initialProfile.spouseEmail,
     spouseWorkType: initialProfile.spouseWorkType, spouseWorkAddress: initialProfile.spouseWorkAddress,
   })
-  const [editKids, setEditKids] = useState<EditKid[]>(kids.map((k) => ({ id: k.id, firstName: k.firstName ?? "", lastName: k.lastName ?? "", dob: k.dob ?? "", schoolName: k.schoolName ?? "", grade: k.grade ?? "", daycareName: k.daycareName ?? "", daycareAddress: k.daycareAddress ?? "" })))
+  const [editKids, setEditKids] = useState<EditKid[]>(kids.map((k) => ({ id: k.id, firstName: k.firstName ?? "", lastName: k.lastName ?? "", dob: k.dob ?? "", schoolName: k.schoolName ?? "", schoolAddress: k.schoolAddress ?? "", grade: k.grade ?? "", daycareName: k.daycareName ?? "", daycareAddress: k.daycareAddress ?? "" })))
   const [editPets, setEditPets] = useState<EditPet[]>(pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed ?? "", dob: p.dob ?? "" })))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -167,7 +168,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
       }),
       fetch("/api/kids", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kids: validKids.map((k) => ({ first_name: k.firstName.trim(), last_name: k.lastName.trim(), dob: k.dob || null, school_name: k.schoolName.trim() || null, grade: k.grade.trim() || null, daycare_name: k.daycareName.trim() || null, daycare_address: k.daycareAddress.trim() || null })) }),
+        body: JSON.stringify({ kids: validKids.map((k) => ({ first_name: k.firstName.trim(), last_name: k.lastName.trim(), dob: k.dob || null, school_name: k.schoolName.trim() || null, school_address: k.schoolAddress.trim() || null, grade: k.grade.trim() || null, daycare_name: k.daycareName.trim() || null, daycare_address: k.daycareAddress.trim() || null })) }),
       }),
       fetch("/api/migrate", { method: "POST" }).catch(() => {}),
       fetch("/api/pets", {
@@ -175,7 +176,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
         body: JSON.stringify({ pets: validPets.map((p) => ({ name: p.name.trim(), animal_type: p.animalType, breed: p.breed.trim() || null, dob: p.dob || null })) }),
       }).catch(() => {}),
     ])
-    setKids(validKids.map((k) => ({ id: k.id, name: [k.firstName, k.lastName].filter(Boolean).join(" "), firstName: k.firstName || null, lastName: k.lastName || null, dob: k.dob || null, schoolName: k.schoolName || null, grade: k.grade || null, daycareName: k.daycareName || null, daycareAddress: k.daycareAddress || null })))
+    setKids(validKids.map((k) => ({ id: k.id, name: [k.firstName, k.lastName].filter(Boolean).join(" "), firstName: k.firstName || null, lastName: k.lastName || null, dob: k.dob || null, schoolName: k.schoolName || null, schoolAddress: k.schoolAddress || null, grade: k.grade || null, daycareName: k.daycareName || null, daycareAddress: k.daycareAddress || null })))
     setPets(validPets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed || null, dob: p.dob || null })))
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 3000)
   }
@@ -440,7 +441,17 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                   <div><label style={fieldLabelStyle}>Date of Birth</label><input type="date" value={kid.dob} max={new Date().toISOString().split("T")[0]} onChange={(e) => sk(i, "dob", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem", colorScheme: "dark" }} /></div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem", marginBottom: "0.75rem" }}>
-                  <div><label style={fieldLabelStyle}>School Name</label><input value={kid.schoolName} placeholder="e.g. Fairview School" onChange={(e) => sk(i, "schoolName", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} /></div>
+                  <div>
+                    <label style={fieldLabelStyle}>School Name <span style={{ fontSize: "0.65rem", fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#818cf8" }}>— search to auto-fill school + address</span></label>
+                    <SchoolSearch
+                      schoolName={kid.schoolName}
+                      schoolAddress={kid.schoolAddress}
+                      onSchoolNameChange={(value) => sk(i, "schoolName", value)}
+                      onSchoolAddressChange={(value) => sk(i, "schoolAddress", value)}
+                      countryHint={countryHint}
+                      placeholder="Search school name..."
+                    />
+                  </div>
                   <div>
                     <label style={fieldLabelStyle}>Grade / Year</label>
                     <select value={kid.grade} onChange={(e) => sk(i, "grade", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer", appearance: "none" }}>
@@ -449,6 +460,10 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                       {GRADE_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
                     </select>
                   </div>
+                </div>
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <label style={fieldLabelStyle}>School Address</label>
+                  <input value={kid.schoolAddress} placeholder="Auto-filled from school search" onChange={(e) => sk(i, "schoolAddress", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
                   <div><label style={fieldLabelStyle}>Daycare / Nursery</label><input value={kid.daycareName} placeholder="Name (optional)" onChange={(e) => sk(i, "daycareName", e.target.value)} style={{ ...inputSt, marginTop: "0.25rem" }} /></div>
@@ -459,7 +474,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                 </div>
               </div>
             ))}
-            <button onClick={() => setEditKids((prev) => [...prev, { id: "", firstName: "", lastName: "", dob: "", schoolName: "", grade: "", daycareName: "", daycareAddress: "" }])} style={{ background: "none", border: "2px dashed rgba(244,114,182,0.3)", borderRadius: "12px", padding: "0.75rem", color: "#f472b6", fontSize: "0.82rem", cursor: "pointer", fontFamily: "'Inter',sans-serif", width: "100%" }}>+ Add Child</button>
+            <button onClick={() => setEditKids((prev) => [...prev, { id: "", firstName: "", lastName: "", dob: "", schoolName: "", schoolAddress: "", grade: "", daycareName: "", daycareAddress: "" }])} style={{ background: "none", border: "2px dashed rgba(244,114,182,0.3)", borderRadius: "12px", padding: "0.75rem", color: "#f472b6", fontSize: "0.82rem", cursor: "pointer", fontFamily: "'Inter',sans-serif", width: "100%" }}>+ Add Child</button>
           </div>
         </SettingsSection>
 

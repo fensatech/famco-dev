@@ -50,7 +50,7 @@ export default async function DashboardPage() {
         id: k.id, name: k.name,
         firstName: k.first_name ?? null, lastName: k.last_name ?? null,
         dob: k.dob ? new Date(k.dob).toISOString().split("T")[0] : null,
-        schoolName: k.school_name ?? null, grade: k.grade ?? null,
+        schoolName: k.school_name ?? null, schoolAddress: k.school_address ?? null, grade: k.grade ?? null,
         daycareName: k.daycare_name ?? null, daycareAddress: k.daycare_address ?? null,
       }))}
       pets={pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animal_type, breed: p.breed ?? null, dob: p.dob ? new Date(p.dob).toISOString().split("T")[0] : null }))}

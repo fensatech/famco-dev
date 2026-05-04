@@ -1,0 +1,2 @@
+ALTER TABLE kids
+  ADD COLUMN IF NOT EXISTS school_address TEXT;

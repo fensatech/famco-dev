@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[] }
+  let body: { kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; school_address?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[] }
   try {
     body = await req.json()
   } catch {
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
             last_name: lastName || null,
             dob: k.dob || null,
             school_name: k.school_name?.trim() || null,
+            school_address: k.school_address?.trim() || null,
             grade: k.grade?.trim() || null,
             daycare_name: k.daycare_name?.trim() || null,
             daycare_address: k.daycare_address?.trim() || null,

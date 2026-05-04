@@ -45,6 +45,7 @@ interface PhotonFeature {
 
 interface AddressSuggestion {
   id: string
+  name: string
   display: string
   street: string
   city: string
@@ -56,6 +57,8 @@ interface AddressSuggestion {
   lon: string | null
   source: "nominatim" | "photon"
 }
+
+type SearchMode = "address" | "school"
 
 const COUNTRY_NAMES: Record<"CA" | "US", string> = {
   CA: "Canada",
@@ -82,16 +85,18 @@ function normalizePostal(value: string): string {
 function parseNominatim(result: NominatimResult): AddressSuggestion {
   const address = result.address ?? {}
   const street = [address.house_number, address.road ?? address.pedestrian ?? address.footway ?? address.path].filter(Boolean).join(" ")
+  const name = result.display_name.split(",")[0]?.trim() || street || result.display_name
   const city = address.city ?? address.town ?? address.village ?? address.municipality ?? address.county ?? ""
   const province = address.state ?? ""
   const postal = address.postcode ?? ""
   const countryCode = (address.country_code?.toUpperCase() ?? "") as "CA" | "US" | ""
   const country = address.country ?? (countryCode ? COUNTRY_NAMES[countryCode] : "")
-  const display = [street || result.display_name, city, province, postal, country].filter(Boolean).join(", ")
+  const display = [name, street, city, province, postal, country].filter(Boolean).join(", ")
   return {
     id: `nominatim-${result.place_id}`,
+    name,
     display,
-    street: street || result.display_name,
+    street: street || "",
     city,
     province,
     postal,
@@ -106,16 +111,18 @@ function parseNominatim(result: NominatimResult): AddressSuggestion {
 function parsePhoton(feature: PhotonFeature): AddressSuggestion {
   const properties = feature.properties
   const street = [properties.housenumber, properties.street].filter(Boolean).join(" ")
+  const name = properties.name?.trim() || street || ""
   const city = properties.city ?? properties.town ?? properties.village ?? ""
   const province = properties.state ?? ""
   const postal = properties.postcode ?? ""
   const countryCode = (properties.countrycode?.toUpperCase() ?? "") as "CA" | "US" | ""
   const country = properties.country ?? (countryCode ? COUNTRY_NAMES[countryCode] : "")
-  const display = [street || properties.name, city, province, postal, country].filter(Boolean).join(", ")
+  const display = [name, street, city, province, postal, country].filter(Boolean).join(", ")
   return {
     id: `photon-${properties.osm_id}`,
+    name,
     display,
-    street: street || properties.name || "",
+    street: street || "",
     city,
     province,
     postal,
@@ -127,11 +134,12 @@ function parsePhoton(feature: PhotonFeature): AddressSuggestion {
   }
 }
 
-function scoreSuggestion(suggestion: AddressSuggestion, query: string, countryHint: "CA" | "US") {
+function scoreSuggestion(suggestion: AddressSuggestion, query: string, countryHint: "CA" | "US", mode: SearchMode) {
   const normalizedQuery = query.trim().toLowerCase()
   const queryNoPunctuation = normalizedQuery.replace(/[,.-]/g, " ")
   const queryTokens = queryNoPunctuation.split(/\s+/).filter(Boolean)
   const display = suggestion.display.toLowerCase()
+  const name = suggestion.name.toLowerCase()
   const street = suggestion.street.toLowerCase()
   const city = suggestion.city.toLowerCase()
   const postal = normalizePostal(suggestion.postal)
@@ -146,6 +154,12 @@ function scoreSuggestion(suggestion: AddressSuggestion, query: string, countryHi
   if (street && normalizedQuery.includes(street)) score += 15
   if (postal && normalizePostal(query).includes(postal)) score += 15
   if (/^[a-z]\d[a-z]\s?\d[a-z]\d$/i.test(query.trim()) && postal === normalizePostal(query)) score += 25
+
+  if (mode === "school") {
+    if (/\b(school|academy|college|campus|nursery|preschool|kindergarten)\b/.test(name)) score += 24
+    if (name && normalizedQuery.includes(name)) score += 20
+    if (name && queryTokens.some((token) => name.includes(token))) score += 8
+  }
 
   for (const token of queryTokens) {
     if (display.includes(token)) score += 2
@@ -218,10 +232,13 @@ async function searchPhoton(query: string, countryCode: "CA" | "US") {
     .filter((feature) => feature.countryCode === countryCode)
 }
 
-async function lookupAddressSuggestions(query: string, countryHint: "CA" | "US") {
+async function lookupAddressSuggestions(query: string, countryHint: "CA" | "US", mode: SearchMode) {
   const alternateCountry = countryHint === "CA" ? "US" : "CA"
   const hasCountryInQuery = queryMentionsCountry(query)
-  const preferredQuery = hasCountryInQuery ? query : `${query}, ${COUNTRY_NAMES[countryHint]}`
+  const schoolQuery = mode === "school" && !/\bschool|academy|college|campus|nursery|preschool|kindergarten\b/i.test(query)
+    ? `${query} school`
+    : query
+  const preferredQuery = hasCountryInQuery ? schoolQuery : `${schoolQuery}, ${COUNTRY_NAMES[countryHint]}`
 
   const candidateBatches = await Promise.allSettled([
     searchNominatim(preferredQuery, countryHint),
@@ -234,7 +251,7 @@ async function lookupAddressSuggestions(query: string, countryHint: "CA" | "US")
   const suggestions = candidateBatches.flatMap((result) => result.status === "fulfilled" ? result.value : [])
   const unique = dedupeSuggestions(suggestions)
   return unique
-    .map((suggestion) => ({ suggestion, score: scoreSuggestion(suggestion, query, countryHint) }))
+    .map((suggestion) => ({ suggestion, score: scoreSuggestion(suggestion, query, countryHint, mode) }))
     .sort((a, b) => b.score - a.score || a.suggestion.display.localeCompare(b.suggestion.display))
     .slice(0, 8)
     .map(({ suggestion }) => suggestion)
@@ -248,13 +265,14 @@ export async function GET(req: NextRequest) {
 
   const query = req.nextUrl.searchParams.get("q")?.trim() ?? ""
   const countryHint = normalizeCountryHint(req.nextUrl.searchParams.get("country"))
+  const mode = req.nextUrl.searchParams.get("mode") === "school" ? "school" : "address"
 
   if (query.length < 3) {
     return NextResponse.json({ results: [] })
   }
 
   try {
-    const results = await lookupAddressSuggestions(query, countryHint)
+    const results = await lookupAddressSuggestions(query, countryHint, mode)
     return NextResponse.json({ results })
   } catch {
     return NextResponse.json({ results: [] })

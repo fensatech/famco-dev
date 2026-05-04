@@ -17,6 +17,7 @@ export async function ensureRuntimeSchema() {
       ALTER TABLE kids ADD COLUMN IF NOT EXISTS first_name TEXT;
       ALTER TABLE kids ADD COLUMN IF NOT EXISTS last_name TEXT;
       ALTER TABLE kids ADD COLUMN IF NOT EXISTS school_name TEXT;
+      ALTER TABLE kids ADD COLUMN IF NOT EXISTS school_address TEXT;
       ALTER TABLE kids ADD COLUMN IF NOT EXISTS grade TEXT;
       ALTER TABLE kids ADD COLUMN IF NOT EXISTS daycare_name TEXT;
       ALTER TABLE kids ADD COLUMN IF NOT EXISTS daycare_address TEXT;
@@ -216,7 +217,7 @@ export async function getKids(profileId: string): Promise<Kid[]> {
 
 export async function replaceKids(
   profileId: string,
-  kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[]
+  kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; school_address?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[]
 ) {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
@@ -226,10 +227,10 @@ export async function replaceKids(
     await client.query("DELETE FROM kids WHERE profile_id = $1", [householdRootId])
     for (const kid of kids) {
       await client.query(
-        `INSERT INTO kids (profile_id, name, first_name, last_name, dob, school_name, grade, daycare_name, daycare_address)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO kids (profile_id, name, first_name, last_name, dob, school_name, school_address, grade, daycare_name, daycare_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [householdRootId, kid.name, kid.first_name ?? null, kid.last_name ?? null, kid.dob,
-         kid.school_name ?? null, kid.grade ?? null, kid.daycare_name ?? null, kid.daycare_address ?? null]
+         kid.school_name ?? null, kid.school_address ?? null, kid.grade ?? null, kid.daycare_name ?? null, kid.daycare_address ?? null]
       )
     }
     await client.query("COMMIT")

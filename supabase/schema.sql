@@ -21,11 +21,18 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 CREATE TABLE IF NOT EXISTS kids (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id  TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  name        TEXT NOT NULL,
-  dob         DATE,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id       TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name             TEXT NOT NULL,
+  first_name       TEXT,
+  last_name        TEXT,
+  dob              DATE,
+  school_name      TEXT,
+  school_address   TEXT,
+  grade            TEXT,
+  daycare_name     TEXT,
+  daycare_address  TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS calendars (
