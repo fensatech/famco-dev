@@ -1,6 +1,8 @@
 import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
 import { google } from "googleapis"
+import { billingEnforcementEnabled, getTrialStartedAt, getTrialWindow, isSyncAllowedForProfile } from "@/lib/billing"
+import { getPrimaryHouseholdProfile } from "@/lib/db"
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -11,6 +13,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const billingProfile = await getPrimaryHouseholdProfile(session.profileId)
+    if (billingEnforcementEnabled() && billingProfile && !isSyncAllowedForProfile(billingProfile)) {
+      const trialWindow = getTrialWindow(getTrialStartedAt(billingProfile))
+      return NextResponse.json(
+        {
+          error: "billing_required",
+          billing_status: trialWindow.status,
+          trial_ends_at: trialWindow.trialEndsAt,
+          access_ends_at: trialWindow.graceEndsAt,
+        },
+        { status: 402 },
+      )
+    }
+
     const auth2 = new google.auth.OAuth2()
     auth2.setCredentials({ access_token: session.accessToken })
     const calendar = google.calendar({ version: "v3", auth: auth2 })

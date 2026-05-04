@@ -16,6 +16,8 @@ export function useGoogleCalendar(provider: string) {
       const d = await r.json()
       if (r.status === 401 || d.error === "token_expired") {
         setGcalError("session_expired")
+      } else if (r.status === 402 || d.error === "billing_required") {
+        setGcalError("billing_required")
       } else if (d.error === "gcal_error") {
         setGcalError("gcal_error")
       } else if (Array.isArray(d.events)) {

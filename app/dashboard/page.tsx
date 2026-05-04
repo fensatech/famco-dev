@@ -1,6 +1,6 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
-import { ensureRuntimeSchema, getDocuments, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getKids, getPets, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
+import { ensureRuntimeSchema, getDocuments, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getKids, getPets, getPrimaryHouseholdProfile, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
 import { buildBillingSummary, billingEnforcementEnabled } from "@/lib/billing"
 import { DashboardShell } from "./DashboardShell"
 import packageJson from "../../package.json"
@@ -24,9 +24,7 @@ export default async function DashboardPage() {
     getReminders(session.profileId).catch(() => []),
   ])
   if (!profile?.onboarding_completed) redirect("/onboarding")
-  const primaryProfile = profile.household_root_id && profile.household_root_id !== session.profileId
-    ? (await getProfile(profile.household_root_id)) ?? profile
-    : profile
+  const primaryProfile = (await getPrimaryHouseholdProfile(session.profileId)) ?? profile
   const billing = buildBillingSummary({
     primaryProfile,
     currentProfileId: session.profileId,

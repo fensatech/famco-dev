@@ -23,6 +23,10 @@ export function useInsightsRefresh({ provider, onScannedEventsUpdate, onFactsUpd
     try {
       const res = await fetch("/api/emails/scan", { method: "POST" })
       if (res.status === 401) return { error: "token_expired" }
+      if (res.status === 402) {
+        const body = await res.json().catch(() => ({}))
+        if (body.error === "billing_required") return { error: "billing_required" }
+      }
       if (!res.ok) return { error: "scan_failed" }
       const [insightsRes, factsRes] = await Promise.all([
         fetch("/api/insights"),

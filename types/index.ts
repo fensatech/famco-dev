@@ -33,6 +33,22 @@ export interface Profile {
   work_address: string | null
   spouse_work_type: string | null
   spouse_work_address: string | null
+  billing_trial_started_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TrialRetentionReason = "user_deleted" | "expired_unpaid" | "manual_cleanup"
+
+export interface TrialRetentionRecord {
+  id: string
+  normalized_email: string
+  provider: string
+  provider_account_id: string
+  provider_profile_id: string
+  trial_started_at: string
+  deleted_at: string | null
+  deleted_reason: TrialRetentionReason | null
   created_at: string
   updated_at: string
 }

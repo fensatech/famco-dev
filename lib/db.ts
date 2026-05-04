@@ -1,5 +1,6 @@
 import { getPool } from "./supabase"
-import type { Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction } from "@/types"
+import { BILLING_GRACE_DAYS, BILLING_TRIAL_DAYS, normalizeBillingEmail } from "./billing"
+import type { Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction, TrialRetentionReason, TrialRetentionRecord } from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
 
@@ -52,9 +53,25 @@ export async function ensureRuntimeSchema() {
         ON family_documents (profile_id, category, created_at DESC);
 
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS household_root_id TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS billing_trial_started_at TIMESTAMPTZ;
       UPDATE profiles SET household_root_id = id WHERE household_root_id IS NULL;
+      UPDATE profiles SET billing_trial_started_at = created_at WHERE billing_trial_started_at IS NULL;
       CREATE INDEX IF NOT EXISTS profiles_household_root_idx
         ON profiles (household_root_id);
+
+      CREATE TABLE IF NOT EXISTS trial_retention_records (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        normalized_email TEXT NOT NULL UNIQUE,
+        provider TEXT NOT NULL,
+        provider_account_id TEXT NOT NULL,
+        provider_profile_id TEXT NOT NULL UNIQUE,
+        trial_started_at TIMESTAMPTZ NOT NULL,
+        deleted_at TIMESTAMPTZ,
+        deleted_reason TEXT
+          CHECK (deleted_reason IN ('user_deleted','expired_unpaid','manual_cleanup') OR deleted_reason IS NULL),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_name TEXT;
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
@@ -187,14 +204,16 @@ export async function createProfile(data: {
   email: string
   first_name: string | null
   last_name: string | null
+  billing_trial_started_at?: string | null
 }) {
   const pool = getPool()
   await pool.query(
-    `INSERT INTO profiles (id, household_root_id, email, first_name, last_name)
-     VALUES ($1, $1, $2, $3, $4)
+    `INSERT INTO profiles (id, household_root_id, email, first_name, last_name, billing_trial_started_at)
+     VALUES ($1, $1, $2, $3, $4, COALESCE($5::timestamptz, NOW()))
      ON CONFLICT (id) DO UPDATE
-     SET household_root_id = COALESCE(profiles.household_root_id, EXCLUDED.household_root_id)`,
-    [data.id, data.email, data.first_name, data.last_name]
+     SET household_root_id = COALESCE(profiles.household_root_id, EXCLUDED.household_root_id),
+         billing_trial_started_at = COALESCE(profiles.billing_trial_started_at, EXCLUDED.billing_trial_started_at)`,
+    [data.id, data.email, data.first_name, data.last_name, data.billing_trial_started_at ?? null]
   )
   householdRootCache.set(data.id, data.id)
 }
@@ -206,6 +225,116 @@ export async function getProfile(id: string): Promise<Profile | null> {
     [id]
   )
   return rows[0] ?? null
+}
+
+export async function getPrimaryHouseholdProfile(profileId: string): Promise<Profile | null> {
+  const profile = await getProfile(profileId)
+  if (!profile) return null
+  const householdRootId = profile.household_root_id ?? profile.id
+  if (householdRootId === profile.id) return profile
+  return getProfile(householdRootId)
+}
+
+function mapTrialRetentionRecord(row: TrialRetentionRecord & {
+  trial_started_at: string | Date
+  deleted_at: string | Date | null
+  created_at: string | Date
+  updated_at: string | Date
+}): TrialRetentionRecord {
+  return {
+    ...row,
+    trial_started_at: isDateValue(row.trial_started_at) ? row.trial_started_at.toISOString() : String(row.trial_started_at),
+    deleted_at: row.deleted_at ? (isDateValue(row.deleted_at) ? row.deleted_at.toISOString() : String(row.deleted_at)) : null,
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
+export async function upsertTrialRetentionRecord(data: {
+  email: string
+  provider: string
+  provider_account_id: string
+  provider_profile_id: string
+  trial_started_at?: string
+}): Promise<TrialRetentionRecord> {
+  const pool = getPool()
+  const normalizedEmail = normalizeBillingEmail(data.email)
+  const trialStartedAt = data.trial_started_at ?? new Date().toISOString()
+  const existingResult = await pool.query<TrialRetentionRecord & {
+    trial_started_at: string | Date
+    deleted_at: string | Date | null
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `SELECT * FROM trial_retention_records
+     WHERE normalized_email = $1 OR provider_profile_id = $2
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [normalizedEmail, data.provider_profile_id],
+  )
+  const existing = existingResult.rows[0]
+  if (existing) {
+    const { rows } = await pool.query<TrialRetentionRecord & {
+      trial_started_at: string | Date
+      deleted_at: string | Date | null
+      created_at: string | Date
+      updated_at: string | Date
+    }>(
+      `UPDATE trial_retention_records
+       SET normalized_email = $2,
+           provider = $3,
+           provider_account_id = $4,
+           provider_profile_id = $5,
+           trial_started_at = LEAST(trial_started_at, $6::timestamptz),
+           deleted_at = NULL,
+           deleted_reason = NULL,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [existing.id, normalizedEmail, data.provider, data.provider_account_id, data.provider_profile_id, trialStartedAt],
+    )
+    return mapTrialRetentionRecord(rows[0])
+  }
+  const { rows } = await pool.query<TrialRetentionRecord & {
+    trial_started_at: string | Date
+    deleted_at: string | Date | null
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `INSERT INTO trial_retention_records
+      (normalized_email, provider, provider_account_id, provider_profile_id, trial_started_at)
+     VALUES ($1,$2,$3,$4,$5::timestamptz)
+     RETURNING *`,
+    [normalizedEmail, data.provider, data.provider_account_id, data.provider_profile_id, trialStartedAt],
+  )
+  return mapTrialRetentionRecord(rows[0])
+}
+
+export async function getTrialRetentionRecordByEmail(email: string): Promise<TrialRetentionRecord | null> {
+  const pool = getPool()
+  const { rows } = await pool.query<TrialRetentionRecord & {
+    trial_started_at: string | Date
+    deleted_at: string | Date | null
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `SELECT * FROM trial_retention_records WHERE normalized_email = $1`,
+    [normalizeBillingEmail(email)],
+  )
+  if (!rows[0]) return null
+  return mapTrialRetentionRecord(rows[0])
+}
+
+export async function markTrialRetentionDeleted(profileIds: string[], reason: TrialRetentionReason, clientArg?: Queryable): Promise<void> {
+  if (profileIds.length === 0) return
+  const pool = getPool()
+  const client = clientArg ?? pool
+  await client.query(
+    `UPDATE trial_retention_records
+     SET deleted_at = NOW(), deleted_reason = $2, updated_at = NOW()
+     WHERE provider_profile_id = ANY($1::text[])`,
+    [profileIds, reason],
+  )
 }
 
 export async function updateProfile(id: string, updates: Partial<Profile>) {
@@ -427,6 +556,19 @@ export async function getStoredFilePathsForAccount(profileId: string): Promise<s
     pool.query<{ storage_path: string }>(`SELECT storage_path FROM family_documents WHERE profile_id = $1`, [householdRootId]),
   ])
   return [...calendarResult.rows, ...documentResult.rows].map((row) => row.storage_path)
+}
+
+export async function getExpiredUnpaidHouseholdRoots(): Promise<string[]> {
+  const pool = getPool()
+  const intervalDays = BILLING_TRIAL_DAYS + BILLING_GRACE_DAYS
+  const { rows } = await pool.query<{ profile_id: string }>(
+    `SELECT p.id AS profile_id
+     FROM profiles p
+     WHERE COALESCE(p.household_root_id, p.id) = p.id
+       AND COALESCE(p.billing_trial_started_at, p.created_at) <= NOW() - ($1::text || ' days')::interval`,
+    [String(intervalDays)],
+  )
+  return rows.map((row) => row.profile_id)
 }
 
 export async function getLastScanDate(profileId: string): Promise<Date | null> {
@@ -1168,7 +1310,7 @@ export async function getHouseholdMembers(profileId: string): Promise<HouseholdM
   }))
 }
 
-export async function deleteAccount(profileId: string): Promise<{ deletedHousehold: boolean }> {
+export async function deleteAccount(profileId: string, reason: TrialRetentionReason = "user_deleted"): Promise<{ deletedHousehold: boolean }> {
   const pool = getPool()
   const client = await pool.connect()
   try {
@@ -1198,6 +1340,7 @@ export async function deleteAccount(profileId: string): Promise<{ deletedHouseho
          WHERE COALESCE(household_root_id, id) = $1`,
         [householdRootId],
       )
+      await markTrialRetentionDeleted(memberRows.map((member) => member.id), reason, client)
       await client.query("COMMIT")
       for (const member of memberRows) clearHouseholdRootCache(member.id)
       clearHouseholdRootCache(householdRootId)
@@ -1211,6 +1354,7 @@ export async function deleteAccount(profileId: string): Promise<{ deletedHouseho
       [profileId],
     )
     await client.query(`DELETE FROM profiles WHERE id = $1`, [profileId])
+    await markTrialRetentionDeleted([profileId], reason, client)
     await client.query("COMMIT")
     clearHouseholdRootCache(profileId)
     return { deletedHousehold: false }

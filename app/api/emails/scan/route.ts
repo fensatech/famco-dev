@@ -3,10 +3,11 @@ import { auth } from "@/auth"
 import { scanEmails } from "@/lib/gmail"
 import { scanOutlookEmails } from "@/lib/outlook"
 import type { HouseholdScanContext } from "@/lib/household-scan"
+import { billingEnforcementEnabled, getTrialStartedAt, getTrialWindow, isSyncAllowedForProfile } from "@/lib/billing"
 import {
   saveScannedEvents, saveScannedOrganizations,
   getKids, getPets, createEvent, getLastScanDate, getExistingMessageIds,
-  upsertFacts, getFamilyFacts, updateFactStatus, getScannedEvents, getProfile, ensureRuntimeSchema,
+  upsertFacts, getFamilyFacts, updateFactStatus, getScannedEvents, getPrimaryHouseholdProfile, getProfile, ensureRuntimeSchema,
 } from "@/lib/db"
 import { seedFactsFromEvents, resolveConflicts, aiExtractFacts } from "@/lib/facts"
 import type { Kid, Pet } from "@/types"
@@ -94,6 +95,20 @@ export async function POST() {
 
   try {
     await ensureRuntimeSchema()
+
+    const billingProfile = await getPrimaryHouseholdProfile(session.profileId)
+    if (billingEnforcementEnabled() && billingProfile && !isSyncAllowedForProfile(billingProfile)) {
+      const trialWindow = getTrialWindow(getTrialStartedAt(billingProfile))
+      return NextResponse.json(
+        {
+          error: "billing_required",
+          billing_status: trialWindow.status,
+          trial_ends_at: trialWindow.trialEndsAt,
+          access_ends_at: trialWindow.graceEndsAt,
+        },
+        { status: 402 },
+      )
+    }
 
     const [kids, pets, lastScanDate, existingIds, profile] = await Promise.all([
       getKids(session.profileId),

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { deleteAccount, ensureRuntimeSchema, getStoredFilePathsForAccount } from "@/lib/db"
+import { deleteAccount, ensureRuntimeSchema, getProfile, getStoredFilePathsForAccount } from "@/lib/db"
 import { deleteFromBlob } from "@/lib/storage"
 
 export async function DELETE() {
@@ -11,12 +11,16 @@ export async function DELETE() {
 
   try {
     await ensureRuntimeSchema().catch(() => {})
-    const storedPaths = await getStoredFilePathsForAccount(session.profileId).catch(() => [])
-    for (const path of storedPaths) {
-      try {
-        await deleteFromBlob(path)
-      } catch (error) {
-        console.error("[account/delete/blob]", error)
+    const profile = await getProfile(session.profileId)
+    const deletesWholeHousehold = !profile?.household_root_id || profile.household_root_id === session.profileId
+    if (deletesWholeHousehold) {
+      const storedPaths = await getStoredFilePathsForAccount(session.profileId).catch(() => [])
+      for (const path of storedPaths) {
+        try {
+          await deleteFromBlob(path)
+        } catch (error) {
+          console.error("[account/delete/blob]", error)
+        }
       }
     }
     const result = await deleteAccount(session.profileId)

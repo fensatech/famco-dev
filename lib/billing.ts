@@ -51,46 +51,80 @@ export function billingEnforcementEnabled() {
   return process.env.ENFORCE_BILLING === "true"
 }
 
+export function normalizeBillingEmail(email: string) {
+  return email.trim().toLowerCase()
+}
+
 export function getPrimaryUserName(profile: Pick<Profile, "first_name" | "last_name" | "email">) {
   return [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() || profile.email
 }
 
-export function buildBillingSummary(input: {
-  primaryProfile: Pick<Profile, "id" | "first_name" | "last_name" | "email" | "created_at">
-  currentProfileId: string
-  now?: Date
-  paypalSubscribeUrl?: string | null
-  enforcementEnabled?: boolean
-}): BillingSummary {
-  const now = startOfMinute(input.now ?? new Date())
-  const signupAt = new Date(input.primaryProfile.created_at)
+export function getTrialStartedAt(profile: Pick<Profile, "billing_trial_started_at" | "created_at">) {
+  return profile.billing_trial_started_at ?? profile.created_at
+}
+
+export function getTrialWindow(trialStartedAtIso: string, now = new Date()) {
+  const signupAt = new Date(trialStartedAtIso)
+  const normalizedNow = startOfMinute(now)
   const trialEndsAt = addDays(signupAt, BILLING_TRIAL_DAYS)
   const graceEndsAt = addDays(trialEndsAt, BILLING_GRACE_DAYS)
 
   let status: BillingStatus = "expired"
   let daysRemaining = 0
 
-  if (now < trialEndsAt) {
+  if (normalizedNow < trialEndsAt) {
     status = "trial"
-    daysRemaining = daysUntil(trialEndsAt, now)
-  } else if (now < graceEndsAt) {
+    daysRemaining = daysUntil(trialEndsAt, normalizedNow)
+  } else if (normalizedNow < graceEndsAt) {
     status = "grace"
-    daysRemaining = daysUntil(graceEndsAt, now)
+    daysRemaining = daysUntil(graceEndsAt, normalizedNow)
   }
+
+  return {
+    trialStartedAt: toIso(signupAt),
+    trialEndsAt: toIso(trialEndsAt),
+    graceEndsAt: toIso(graceEndsAt),
+    status,
+    daysRemaining,
+  }
+}
+
+export function isPastGracePeriod(trialStartedAtIso: string, now = new Date()) {
+  return getTrialWindow(trialStartedAtIso, now).status === "expired"
+}
+
+export function isSyncAllowedForProfile(profile: Pick<Profile, "billing_trial_started_at" | "created_at">, now = new Date()) {
+  return getTrialWindow(getTrialStartedAt(profile), now).status === "trial"
+}
+
+export function isLoginAllowedForProfile(profile: Pick<Profile, "billing_trial_started_at" | "created_at">, now = new Date()) {
+  return getTrialWindow(getTrialStartedAt(profile), now).status !== "expired"
+}
+
+export function buildBillingSummary(input: {
+  primaryProfile: Pick<Profile, "id" | "first_name" | "last_name" | "email" | "created_at" | "billing_trial_started_at">
+  currentProfileId: string
+  now?: Date
+  paypalSubscribeUrl?: string | null
+  enforcementEnabled?: boolean
+}): BillingSummary {
+  const now = startOfMinute(input.now ?? new Date())
+  const trialStartedAt = getTrialStartedAt(input.primaryProfile)
+  const trialWindow = getTrialWindow(trialStartedAt, now)
 
   return {
     provider: BILLING_PROVIDER,
     monthlyPrice: BILLING_MONTHLY_PRICE,
     trialDays: BILLING_TRIAL_DAYS,
     graceDays: BILLING_GRACE_DAYS,
-    status,
-    trialEndsAt: toIso(trialEndsAt),
-    graceEndsAt: toIso(graceEndsAt),
-    syncStopsAt: toIso(trialEndsAt),
-    accessEndsAt: toIso(graceEndsAt),
-    daysRemaining,
-    loginAllowedWhenEnforced: status !== "expired",
-    syncAllowedWhenEnforced: status === "trial",
+    status: trialWindow.status,
+    trialEndsAt: trialWindow.trialEndsAt,
+    graceEndsAt: trialWindow.graceEndsAt,
+    syncStopsAt: trialWindow.trialEndsAt,
+    accessEndsAt: trialWindow.graceEndsAt,
+    daysRemaining: trialWindow.daysRemaining,
+    loginAllowedWhenEnforced: trialWindow.status !== "expired",
+    syncAllowedWhenEnforced: trialWindow.status === "trial",
     enforcementEnabled: input.enforcementEnabled ?? billingEnforcementEnabled(),
     primaryUserName: getPrimaryUserName(input.primaryProfile),
     primaryUserEmail: input.primaryProfile.email,

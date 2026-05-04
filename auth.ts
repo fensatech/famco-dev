@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
 import { authConfig } from "./auth.config"
-import { acceptPendingFamilyInvites, createProfile, ensureRuntimeSchema } from "@/lib/db"
+import { acceptPendingFamilyInvites, createProfile, ensureRuntimeSchema, upsertTrialRetentionRecord } from "@/lib/db"
+import { billingEnforcementEnabled, getTrialWindow } from "@/lib/billing"
 
 async function refreshGoogleToken(refreshToken: string): Promise<{ accessToken: string; expiresAt: number } | null> {
   try {
@@ -36,11 +37,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       } catch (err) {
         console.error("[auth/schema]", err instanceof Error ? err.message : err)
       }
+      const retention = await upsertTrialRetentionRecord({
+        email: user.email,
+        provider: account.provider,
+        provider_account_id: String(account.providerAccountId),
+        provider_profile_id: profileId,
+      })
+      if (billingEnforcementEnabled() && getTrialWindow(retention.trial_started_at).status === "expired") {
+        return "/?billing=expired"
+      }
       await createProfile({
         id: profileId,
         email: user.email,
         first_name: user.name?.split(" ")[0] ?? null,
         last_name: user.name?.split(" ").slice(1).join(" ") ?? null,
+        billing_trial_started_at: retention.trial_started_at,
       })
       try {
         await acceptPendingFamilyInvites(user.email, profileId)

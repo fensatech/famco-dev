@@ -149,6 +149,12 @@ export default function TermsOfUsePage() {
                 data may be permanently removed immediately. During testing periods, Famco may
                 display these billing timelines without enforcing payment or suspension.
               </p>
+              <p>
+                Even after household data is deleted, Famco may retain a minimal account-history
+                record containing your normalized email, provider identity, and original trial
+                start date for the limited purpose of preventing repeated free-trial abuse and
+                supporting future paid reactivation.
+              </p>
             </Section>
 
             <Section title="6. Gmail & Google Data Access">

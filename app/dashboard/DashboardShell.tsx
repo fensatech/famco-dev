@@ -305,6 +305,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               gcalLoaded={gcalLoaded}
               setGcalLoaded={setGcalLoaded}
               onEventsRefresh={setEvents}
+              onOpenBilling={() => setTab("billing")}
               openSignal={addEventSignal}
               coparentingSchedule={coparentingSchedule}
               coparentingOverrides={coparentingOverrides}
@@ -331,6 +332,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               insightActions={insightActions}
               assigneeOptions={assigneeOptions}
               provider={provider}
+              onOpenBilling={() => setTab("billing")}
               onRefresh={refreshInsights}
               onAddEvent={addEvent}
               onAddTask={addTask}

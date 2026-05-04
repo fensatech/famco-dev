@@ -31,6 +31,7 @@ interface Props {
   gcalLoaded: boolean
   setGcalLoaded: (v: boolean) => void
   onEventsRefresh: (evs: Event[]) => void
+  onOpenBilling: () => void
   openSignal?: number
   coparentingSchedule?: CoParentingSchedule | null
   coparentingOverrides?: CoParentingOverride[]
@@ -126,7 +127,7 @@ function IcsImportModal({ memberOptions, importing, importResult, fileInputRef, 
   )
 }
 
-export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, memberOptions, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, openSignal, coparentingSchedule, coparentingOverrides = [] }: Props) {
+export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, memberOptions, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, onOpenBilling, openSignal, coparentingSchedule, coparentingOverrides = [] }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [typeFilter, setTypeFilter] = useState<"all" | "events" | "tasks">("all")
   const [selectedCalTask, setSelectedCalTask] = useState<Task | null>(null)
@@ -214,6 +215,8 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
         const d = await r.json()
         if (r.status === 401 || d.error === "token_expired") {
           setGcalError("session_expired")
+        } else if (r.status === 402 || d.error === "billing_required") {
+          setGcalError("billing_required")
         } else if (d.error === "gcal_error") {
           setGcalError("gcal_error")
         } else if (Array.isArray(d.events)) {
@@ -440,6 +443,15 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
               {" "}to reconnect.
             </span>
           )}
+          {gcalError === "billing_required" && (
+            <span style={{ color: "#f87171", display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+              ⚠ Google Calendar syncing is paused because the trial window has ended —{" "}
+              <button onClick={onOpenBilling} style={{ background: "none", border: "none", color: "#f87171", textDecoration: "underline", cursor: "pointer", fontSize: "0.78rem", fontFamily: "'Inter',sans-serif", padding: 0 }}>
+                open Billing
+              </button>
+              {" "}to review next steps.
+            </span>
+          )}
           {gcalError === "gcal_error" && (
             <span style={{ color: "#f87171", display: "flex", alignItems: "center", gap: "0.4rem" }}>
               ⚠ Google Calendar error —{" "}
@@ -448,6 +460,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                 fetch("/api/gcal").then(async (r) => {
                   const d = await r.json()
                   if (r.status === 401 || d.error === "token_expired") setGcalError("session_expired")
+                  else if (r.status === 402 || d.error === "billing_required") setGcalError("billing_required")
                   else if (Array.isArray(d.events)) { setGcalEvents(d.events); setGcalError("") }
                   else setGcalError("gcal_error")
                   setGcalLoading(false)

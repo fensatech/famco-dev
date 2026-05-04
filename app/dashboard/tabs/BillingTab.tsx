@@ -185,7 +185,7 @@ export function BillingTab({ billing }: { billing: BillingSummary }) {
           {billing.isPrimaryUser
             ? "This deletes the primary Famco account and permanently removes the household data connected to it right away."
             : "This removes your Famco account from the shared household right away. The primary household data remains with the account owner."}
-          {" "}There is no undo.
+          {" "}There is no undo. To prevent repeat free trials, Famco may retain a minimal billing-history record with your normalized email, provider identity, and original trial start date after the household data is removed.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem", maxWidth: "360px" }}>
           <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>

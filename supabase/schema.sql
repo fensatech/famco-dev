@@ -14,10 +14,24 @@ CREATE TABLE IF NOT EXISTS profiles (
                          ('single_parent','co_parent','full_household','blended')),
   co_parent_email      TEXT,
   partner_name         TEXT,
+  billing_trial_started_at TIMESTAMPTZ,
   onboarding_step      INT NOT NULL DEFAULT 0,
   onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trial_retention_records (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  normalized_email  TEXT NOT NULL UNIQUE,
+  provider          TEXT NOT NULL,
+  provider_account_id TEXT NOT NULL,
+  provider_profile_id TEXT NOT NULL UNIQUE,
+  trial_started_at  TIMESTAMPTZ NOT NULL,
+  deleted_at        TIMESTAMPTZ,
+  deleted_reason    TEXT CHECK (deleted_reason IN ('user_deleted','expired_unpaid','manual_cleanup') OR deleted_reason IS NULL),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS kids (

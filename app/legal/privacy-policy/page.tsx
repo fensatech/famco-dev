@@ -307,6 +307,12 @@ export default function PrivacyPolicyPage() {
                   ends without payment, household data may be permanently removed immediately.
                 </li>
                 <li>
+                  <strong>Minimal trial-history record:</strong> After deletion, Famco may retain a
+                  limited record containing your normalized email, provider identity, and original
+                  trial start date to prevent repeated free-trial abuse and support future paid
+                  reactivation.
+                </li>
+                <li>
                   <strong>Usage logs:</strong> Retained for up to 12 months for security and
                   performance analysis
                 </li>

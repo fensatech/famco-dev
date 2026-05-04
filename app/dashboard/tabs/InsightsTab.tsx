@@ -221,6 +221,7 @@ interface Props {
   insightActions: ScannedEventAction[]
   assigneeOptions: string[]
   provider: string
+  onOpenBilling: () => void
   onRefresh: () => Promise<{ error?: string }>
   onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null) => Promise<boolean>
   onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
@@ -228,7 +229,7 @@ interface Props {
   onUpdateAction: (scannedEventId: string, data: { status?: "new" | "handled"; assigned_to?: string | null; last_action?: "calendar" | "task" | "reminder" | "handled" | null }) => Promise<boolean>
 }
 
-export function InsightsTab({ scannedEvents, insightActions, assigneeOptions, provider, onRefresh, onAddEvent, onAddTask, onAddReminder, onUpdateAction }: Props) {
+export function InsightsTab({ scannedEvents, insightActions, assigneeOptions, provider, onOpenBilling, onRefresh, onAddEvent, onAddTask, onAddReminder, onUpdateAction }: Props) {
   const [section, setSection] = useState<string>("dashboard")
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
   const [refreshing, setRefreshing] = useState(false)
@@ -339,6 +340,8 @@ export function InsightsTab({ scannedEvents, insightActions, assigneeOptions, pr
 
   const errorBanner = scanError === "token_expired"
     ? <div style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.35)", borderRadius: "12px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#fbbf24" }}>⚠ Google session expired — <button onClick={() => signOut({ callbackUrl: "/" })} style={{ background: "none", border: "none", color: "#fbbf24", textDecoration: "underline", cursor: "pointer", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", padding: 0 }}>sign out and back in</button> to reconnect.</div>
+    : scanError === "billing_required"
+      ? <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "12px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#f87171" }}>⚠ Email syncing is paused because the free trial window has ended. <button onClick={onOpenBilling} style={{ background: "none", border: "none", color: "#f87171", textDecoration: "underline", cursor: "pointer", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", padding: 0 }}>Open Billing</button> to review the timeline.</div>
     : scanError
       ? <div style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "12px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#f87171" }}>⚠ Scan failed — please try again.</div>
       : null

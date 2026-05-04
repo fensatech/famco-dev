@@ -3,7 +3,11 @@ import { redirect } from "next/navigation"
 import { getProfile } from "@/lib/db"
 import { ONBOARDING_STEPS } from "@/types"
 
-export default async function Home() {
+interface HomePageProps {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function Home({ searchParams }: HomePageProps) {
   const session = await auth()
   if (session?.profileId) {
     const profile = await getProfile(session.profileId)
@@ -11,6 +15,8 @@ export default async function Home() {
     const step = ONBOARDING_STEPS[profile?.onboarding_step ?? 0] ?? "profile"
     redirect(`/onboarding/${step}`)
   }
+  const query = await searchParams
+  const billingExpired = query.billing === "expired"
 
   return (
     <main
@@ -64,6 +70,23 @@ export default async function Home() {
             Family Command Center — your all-in-one family organiser.
           </p>
         </div>
+
+        {billingExpired && (
+          <div
+            style={{
+              marginBottom: "1.5rem",
+              padding: "0.9rem 1rem",
+              borderRadius: "14px",
+              background: "rgba(248,113,113,0.1)",
+              border: "1px solid rgba(248,113,113,0.28)",
+              color: "#fecaca",
+              fontSize: "0.82rem",
+              lineHeight: 1.6,
+            }}
+          >
+            Your free trial and grace period have ended. Famco cannot start a second free trial for this household. Please contact support or resume with billing once paid subscriptions are enabled.
+          </div>
+        )}
 
         {/* Sign-in buttons */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
