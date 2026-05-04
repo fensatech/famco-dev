@@ -1,4 +1,5 @@
 import type { Event, Task, CoParentingSchedule, CoParentingOverride } from "@/lib/db"
+import type { BillingSummary } from "@/lib/billing"
 import type { FamilyFact, FamilyInvite, HouseholdMember, Reminder, ScannedEventAction } from "@/types"
 
 export type { CoParentingSchedule, CoParentingOverride }
@@ -51,11 +52,13 @@ export interface CalendarMemberOption {
   kind: "family" | "adult" | "child" | "pet"
 }
 
-export type Tab = "home" | "calendar" | "tasks" | "insights" | "data" | "expenses" | "coparenting" | "settings"
+export type Tab = "home" | "calendar" | "tasks" | "insights" | "data" | "expenses" | "coparenting" | "settings" | "billing"
 export type CalView = "day" | "week" | "month"
+export type { BillingSummary }
 
 export interface DashboardViewModel {
   profile: ProfileData
+  billing: BillingSummary
   kids: KidRow[]
   pets: PetRow[]
   events: Event[]
@@ -78,7 +81,8 @@ export const NAV: { id: Tab; label: string; color: string; bg: string; gradient:
   { id: "tasks",    label: "Tasks",         color: "#EC4899", bg: "rgba(236,72,153,0.1)",  gradient: "linear-gradient(135deg,#EC4899,#F43F5E)" },
   { id: "insights", label: "Insights",      color: "#F59E0B", bg: "rgba(245,158,11,0.1)",  gradient: "linear-gradient(135deg,#F59E0B,#EF4444)" },
   { id: "data",     label: "Family Knowledge", color: "#10B981", bg: "rgba(16,185,129,0.1)",  gradient: "linear-gradient(135deg,#10B981,#0EA5E9)" },
-  { id: "expenses",    label: "Expenses",       color: "#F97316", bg: "rgba(249,115,22,0.1)",  gradient: "linear-gradient(135deg,#F97316,#EAB308)" },
+  { id: "expenses", label: "Expenses",          color: "#F97316", bg: "rgba(249,115,22,0.1)",  gradient: "linear-gradient(135deg,#F97316,#EAB308)" },
   { id: "coparenting", label: "Co-Parenting",   color: "#06B6D4", bg: "rgba(6,182,212,0.1)",   gradient: "linear-gradient(135deg,#06B6D4,#6366F1)" },
-  { id: "settings",    label: "Manage Family",  color: "#8B5CF6", bg: "rgba(139,92,246,0.1)",  gradient: "linear-gradient(135deg,#8B5CF6,#EC4899)" },
+  { id: "settings", label: "Manage Family",     color: "#8B5CF6", bg: "rgba(139,92,246,0.1)",  gradient: "linear-gradient(135deg,#8B5CF6,#EC4899)" },
+  { id: "billing", label: "Billing",            color: "#14B8A6", bg: "rgba(20,184,166,0.1)",  gradient: "linear-gradient(135deg,#14B8A6,#0EA5E9)" },
 ]

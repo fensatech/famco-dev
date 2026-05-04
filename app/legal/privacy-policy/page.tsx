@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 import Link from "next/link"
 import type { Metadata } from "next"
 
@@ -56,7 +57,7 @@ export default function PrivacyPolicyPage() {
               Privacy <span className="gradient-text">Policy</span>
             </h1>
             <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-              Effective date: 18 April 2026 &nbsp;·&nbsp; Last updated: 18 April 2026
+              Effective date: 4 May 2026 &nbsp;·&nbsp; Last updated: 4 May 2026
             </p>
           </div>
 
@@ -135,6 +136,16 @@ export default function PrivacyPolicyPage() {
                   Uploaded files or documents you associate with calendar entries
                 </li>
               </ul>
+
+              <SubHeading>2.5 Billing & Subscription Data</SubHeading>
+              <ul>
+                <li>Trial start and trial/grace timeline information tied to the household owner account</li>
+                <li>Subscription plan metadata, payment provider selection, and billing status information</li>
+                <li>
+                  If paid billing is enabled, limited PayPal billing references needed to manage recurring
+                  household subscriptions
+                </li>
+              </ul>
             </Section>
 
             <Section title="3. How We Use Your Information">
@@ -145,6 +156,7 @@ export default function PrivacyPolicyPage() {
                 <li>Personalise your dashboard and family command centre</li>
                 <li>Scan Gmail (with your consent) to surface relevant family information</li>
                 <li>Send you service-related notifications and updates</li>
+                <li>Show trial, billing, grace-period, and account-deletion notices</li>
                 <li>Detect, investigate, and prevent security incidents and abuse</li>
                 <li>Comply with legal obligations</li>
               </ul>
@@ -240,6 +252,11 @@ export default function PrivacyPolicyPage() {
                   authentication credentials under their own privacy policies.
                 </li>
                 <li>
+                  <strong>Payment provider:</strong> If subscriptions are enabled, PayPal may process
+                  recurring billing details under PayPal&apos;s own privacy policy. Famco stores only
+                  the minimum billing metadata needed to manage your subscription.
+                </li>
+                <li>
                   <strong>Legal requirements:</strong> We may disclose your data if required by
                   law, court order, or to protect the rights and safety of Fensatech, our users, or
                   the public.
@@ -277,12 +294,17 @@ export default function PrivacyPolicyPage() {
               </p>
               <ul>
                 <li>
-                  <strong>Account data:</strong> Retained until you delete your account, plus up to
-                  30 days for backup recovery purposes
+                  <strong>Account data:</strong> Retained until you delete your account, except where
+                  a billing grace timeline or legal hold requires shorter or longer retention
                 </li>
                 <li>
                   <strong>Gmail access tokens:</strong> Deleted immediately upon revoking Google
                   access or deleting your account
+                </li>
+                <li>
+                  <strong>Expired unpaid households:</strong> If billing enforcement is enabled, a
+                  household may enter a 7-day grace period after the 30-day trial. When that period
+                  ends without payment, household data may be permanently removed immediately.
                 </li>
                 <li>
                   <strong>Usage logs:</strong> Retained for up to 12 months for security and
@@ -339,7 +361,8 @@ export default function PrivacyPolicyPage() {
                 <a href="mailto:privacy@fensatech.com" style={{ color: "var(--accent)" }}>
                   privacy@fensatech.com
                 </a>
-                . We will respond within 30 days. You also have the right to lodge a complaint with
+                . You may also delete your Famco account directly inside the app. We will respond within
+                30 days. You also have the right to lodge a complaint with
                 the{" "}
                 <a
                   href="https://ico.org.uk"

@@ -11,11 +11,11 @@ interface Props {
 
 export function MobileNav({ tab, onTab, scannedCount, pendingTaskCount }: Props) {
   return (
-    <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: "64px", background: "rgba(255,255,255,0.95)", borderTop: "1px solid rgba(60,60,67,0.1)", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 100, backdropFilter: "blur(20px)", boxShadow: "0 -1px 20px rgba(0,0,0,0.06)" }}>
+    <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: "64px", background: "rgba(255,255,255,0.95)", borderTop: "1px solid rgba(60,60,67,0.1)", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "0.35rem", zIndex: 100, backdropFilter: "blur(20px)", boxShadow: "0 -1px 20px rgba(0,0,0,0.06)", overflowX: "auto", padding: "0 0.5rem" }}>
       {NAV.map(({ id, label, color, bg }) => {
         const active = tab === id
         return (
-          <button key={id} onClick={() => onTab(id)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", background: active ? bg : "transparent", border: "none", cursor: "pointer", padding: "0.35rem 0.625rem 0.3rem", borderRadius: "12px", color: active ? color : "var(--muted)", fontSize: "0.58rem", fontWeight: active ? 700 : 400, fontFamily: "inherit", position: "relative", minWidth: "52px" }}>
+          <button key={id} onClick={() => onTab(id)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem", background: active ? bg : "transparent", border: "none", cursor: "pointer", padding: "0.35rem 0.625rem 0.3rem", borderRadius: "12px", color: active ? color : "var(--muted)", fontSize: "0.58rem", fontWeight: active ? 700 : 400, fontFamily: "inherit", position: "relative", minWidth: "52px", flex: "0 0 auto" }}>
             <NavIcon id={id} size={22} color={active ? color : "var(--muted)"} />
             <span>{label}</span>
             {id === "insights" && scannedCount > 0 && (

@@ -1036,6 +1036,60 @@ export async function getHouseholdMembers(profileId: string): Promise<HouseholdM
   }))
 }
 
+export async function deleteAccount(profileId: string): Promise<{ deletedHousehold: boolean }> {
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    const { rows } = await client.query<{ id: string; household_root_id: string | null }>(
+      `SELECT id, COALESCE(household_root_id, id) AS household_root_id
+       FROM profiles
+       WHERE id = $1`,
+      [profileId],
+    )
+    const current = rows[0]
+    if (!current) {
+      throw new Error("Account not found")
+    }
+
+    const householdRootId = current.household_root_id ?? profileId
+    const { rows: memberRows } = await client.query<{ id: string }>(
+      `SELECT id
+       FROM profiles
+       WHERE COALESCE(household_root_id, id) = $1`,
+      [householdRootId],
+    )
+
+    if (profileId === householdRootId) {
+      await client.query(
+        `DELETE FROM profiles
+         WHERE COALESCE(household_root_id, id) = $1`,
+        [householdRootId],
+      )
+      await client.query("COMMIT")
+      for (const member of memberRows) clearHouseholdRootCache(member.id)
+      clearHouseholdRootCache(householdRootId)
+      return { deletedHousehold: true }
+    }
+
+    await client.query(
+      `UPDATE family_invites
+       SET status = 'revoked', accepted_by_profile_id = NULL
+       WHERE accepted_by_profile_id = $1`,
+      [profileId],
+    )
+    await client.query(`DELETE FROM profiles WHERE id = $1`, [profileId])
+    await client.query("COMMIT")
+    clearHouseholdRootCache(profileId)
+    return { deletedHousehold: false }
+  } catch (error) {
+    await client.query("ROLLBACK")
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
 export interface Expense {
   id: string
   profile_id: string

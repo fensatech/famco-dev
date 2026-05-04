@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { ensureRuntimeSchema, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getKids, getPets, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
+import { buildBillingSummary, billingEnforcementEnabled } from "@/lib/billing"
 import { DashboardShell } from "./DashboardShell"
 import packageJson from "../../package.json"
 
@@ -22,6 +23,14 @@ export default async function DashboardPage() {
     getReminders(session.profileId).catch(() => []),
   ])
   if (!profile?.onboarding_completed) redirect("/onboarding")
+  const primaryProfile = profile.household_root_id && profile.household_root_id !== session.profileId
+    ? (await getProfile(profile.household_root_id)) ?? profile
+    : profile
+  const billing = buildBillingSummary({
+    primaryProfile,
+    currentProfileId: session.profileId,
+    enforcementEnabled: billingEnforcementEnabled(),
+  })
   return (
     <DashboardShell
       profile={{
@@ -55,6 +64,7 @@ export default async function DashboardPage() {
       }))}
       pets={pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animal_type, breed: p.breed ?? null, dob: p.dob ? new Date(p.dob).toISOString().split("T")[0] : null }))}
       provider={session.provider ?? ""}
+      billing={billing}
       events={allEvents}
       tasks={tasks}
       scannedEvents={scannedEvents}

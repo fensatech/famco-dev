@@ -18,10 +18,11 @@ import { DataMapTab } from "./tabs/DataMapTab"
 import { ExpensesTab } from "./tabs/ExpensesTab"
 import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
+import { BillingTab } from "./tabs/BillingTab"
 import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride } from "./types"
 import { memberColor } from "./lib/events"
 
-export function DashboardShell({ profile: initialProfile, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
+export function DashboardShell({ profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
   const [tab, setTab] = useState<Tab>("home")
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -93,6 +94,7 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
   const pending = tasks.filter((t) => !t.completed)
   const done = tasks.filter((t) => t.completed)
   const activeReminders = reminders.filter((r) => r.status === "pending")
+  const showBillingBanner = billing.status !== "active" && (billing.status !== "trial" || billing.daysRemaining <= 14)
   const assigneeOptions = [
     ...householdMembers.map((member) => [member.first_name, member.last_name].filter(Boolean).join(" ")),
     ...kids.map((kid) => kid.name),
@@ -234,6 +236,32 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
         <TopBar tab={tab} isMobile={isMobile} appVersion={appVersion} />
 
         <main style={{ flex: 1, padding: isMobile ? "1.25rem 1rem" : "2rem 2.5rem", paddingBottom: isMobile ? "5.5rem" : "5rem", overflowY: "auto" }}>
+          {showBillingBanner && tab !== "billing" && (
+            <div style={{ marginBottom: "1rem", borderRadius: "16px", padding: "1rem 1.1rem", border: "1px solid rgba(20,184,166,0.22)", background: billing.status === "grace" ? "rgba(251,191,36,0.12)" : "rgba(20,184,166,0.09)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 800, color: billing.status === "grace" ? "#f59e0b" : "#14b8a6", marginBottom: "0.18rem" }}>
+                    {billing.status === "trial"
+                      ? `${billing.daysRemaining} day${billing.daysRemaining === 1 ? "" : "s"} left in your free trial`
+                      : billing.status === "grace"
+                        ? `Grace week preview: ${billing.daysRemaining} day${billing.daysRemaining === 1 ? "" : "s"} left`
+                        : "Subscription access preview"}
+                  </div>
+                  <div style={{ fontSize: "0.76rem", color: "var(--muted)", lineHeight: 1.55 }}>
+                    {billing.enforcementEnabled
+                      ? "When the trial ends, syncing stops first. After the 7-day grace period, logins stop and household data becomes eligible for permanent deletion."
+                      : "Preview only while you test Famco: PayPal billing is not enforced yet, but this is the timeline your household will follow when subscriptions go live."}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setTab("billing")}
+                  style={{ border: "none", borderRadius: "999px", background: "linear-gradient(135deg,#14b8a6,#0ea5e9)", color: "#fff", padding: "0.55rem 1rem", cursor: "pointer", fontWeight: 700, fontSize: "0.78rem", fontFamily: "inherit" }}
+                >
+                  Open Billing
+                </button>
+              </div>
+            </div>
+          )}
 
           {tab === "home" && (
             <HomeTab
@@ -366,6 +394,10 @@ export function DashboardShell({ profile: initialProfile, kids: initialKids, pet
               onInvite={createInvite}
               onRevokeInvite={revokeInvite}
             />
+          )}
+
+          {tab === "billing" && (
+            <BillingTab billing={billing} />
           )}
 
         </main>

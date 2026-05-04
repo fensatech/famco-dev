@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 import Link from "next/link"
 import type { Metadata } from "next"
 
@@ -56,7 +57,7 @@ export default function TermsOfUsePage() {
               Terms of <span className="gradient-text">Use</span>
             </h1>
             <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-              Effective date: 18 April 2026 &nbsp;·&nbsp; Last updated: 18 April 2026
+              Effective date: 4 May 2026 &nbsp;·&nbsp; Last updated: 4 May 2026
             </p>
           </div>
 
@@ -125,7 +126,31 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="5. Gmail & Google Data Access">
+            <Section title="5. Trials, Subscription & PayPal Billing">
+              <p>
+                Each new household begins with a free <strong>30-day trial</strong>. After the
+                trial, Famco is designed to move to a <strong>USD $10 per month</strong> recurring
+                subscription paid through <strong>PayPal</strong>.
+              </p>
+              <p>
+                The person who first creates the household account is treated as the{" "}
+                <strong>primary billing user</strong> and is responsible for starting, managing,
+                and maintaining recurring PayPal payments for the household.
+              </p>
+              <p>
+                If billing enforcement is enabled, Famco may allow a further <strong>7-day grace
+                period</strong> after the trial ends. During that grace period, users may still be
+                able to log in, but data syncing and connected integrations may be paused until
+                payment is restored.
+              </p>
+              <p>
+                If the grace period ends without payment, login access may be blocked and household
+                data may be permanently removed immediately. During testing periods, Famco may
+                display these billing timelines without enforcing payment or suspension.
+              </p>
+            </Section>
+
+            <Section title="6. Gmail & Google Data Access">
               <p>
                 When you connect your Google account, you grant Famco permission to read your Gmail
                 messages in <em>read-only</em> mode (
@@ -148,7 +173,7 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="6. Acceptable Use">
+            <Section title="7. Acceptable Use">
               <p>You agree not to:</p>
               <ul>
                 <li>Use the Service for any unlawful purpose or in violation of any regulations</li>
@@ -160,7 +185,7 @@ export default function TermsOfUsePage() {
               </ul>
             </Section>
 
-            <Section title="7. Intellectual Property">
+            <Section title="8. Intellectual Property">
               <p>
                 All content, features, and functionality of the Service — including text, graphics,
                 logos, icons, and software — are owned by Fensatech or its licensors and are
@@ -173,7 +198,7 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="8. Privacy">
+            <Section title="9. Privacy">
               <p>
                 Your use of the Service is also governed by our{" "}
                 <Link href="/legal/privacy-policy" style={{ color: "var(--accent)" }}>
@@ -183,16 +208,17 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="9. Third-Party Services">
+            <Section title="10. Third-Party Services">
               <p>
                 The Service integrates with third-party platforms including Google and Apple for
-                authentication and data. Your use of those platforms is subject to their own terms
-                of service and privacy policies. We are not responsible for the practices of any
-                third-party services.
+                authentication and data, and with PayPal for subscription billing when paid plans
+                are enabled. Your use of those platforms is subject to their own terms of service
+                and privacy policies. We are not responsible for the practices of any third-party
+                services.
               </p>
             </Section>
 
-            <Section title="10. Disclaimers">
+            <Section title="11. Disclaimers">
               <p>
                 The Service is provided on an <strong>"as is"</strong> and{" "}
                 <strong>"as available"</strong> basis without warranties of any kind, either express
@@ -205,7 +231,7 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="11. Limitation of Liability">
+            <Section title="12. Limitation of Liability">
               <p>
                 To the fullest extent permitted by applicable law, Fensatech and its officers,
                 employees, agents, and licensors shall not be liable for any indirect, incidental,
@@ -220,22 +246,24 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="12. Termination">
+            <Section title="13. Termination">
               <p>
                 We may suspend or terminate your access to the Service at any time, with or without
                 notice, for any conduct that we believe violates these Terms or is harmful to other
                 users, us, or third parties.
               </p>
               <p>
-                You may delete your account at any time by contacting us at{" "}
+                You may delete your account immediately from within the Famco app, or by contacting us at{" "}
                 <a href="mailto:support@fensatech.com" style={{ color: "var(--accent)" }}>
                   support@fensatech.com
                 </a>
-                . Upon termination, your right to use the Service ceases immediately.
+                . If you are the primary billing user, deleting your account may remove the entire
+                household workspace and its data immediately. Upon termination, your right to use
+                the Service ceases immediately.
               </p>
             </Section>
 
-            <Section title="13. Governing Law">
+            <Section title="14. Governing Law">
               <p>
                 These Terms are governed by and construed in accordance with the laws of{" "}
                 <strong>England and Wales</strong>, without regard to conflict of law principles.
@@ -244,7 +272,7 @@ export default function TermsOfUsePage() {
               </p>
             </Section>
 
-            <Section title="14. Contact Us">
+            <Section title="15. Contact Us">
               <p>
                 If you have any questions about these Terms, please contact us:
               </p>
