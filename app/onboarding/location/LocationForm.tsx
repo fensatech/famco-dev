@@ -1,12 +1,11 @@
 "use client"
+
 import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 
-// ── North American cities ─────────────────────────────────────────────────────
 const CITIES = [
-  // USA — Major cities by state
   "New York, NY","Los Angeles, CA","Chicago, IL","Houston, TX","Phoenix, AZ",
   "Philadelphia, PA","San Antonio, TX","San Diego, CA","Dallas, TX","San Jose, CA",
   "Austin, TX","Jacksonville, FL","Fort Worth, TX","Columbus, OH","Charlotte, NC",
@@ -59,14 +58,13 @@ const CITIES = [
   "Frederick, MD","Annapolis, MD","Gaithersburg, MD","Rockville, MD",
   "Miami, FL","Jacksonville, FL","Tampa, FL","Orlando, FL","Hialeah, FL",
   "Gainesville, FL","Pensacola, FL","Cape Coral, FL","Fort Myers, FL","Naples, FL",
-  // Canada — by province
   "Toronto, ON","Ottawa, ON","Mississauga, ON","Brampton, ON","Hamilton, ON",
   "London, ON","Markham, ON","Vaughan, ON","Kitchener, ON","Windsor, ON",
   "Burlington, ON","Oakville, ON","Barrie, ON","Kingston, ON","Sudbury, ON",
   "Oshawa, ON","Thunder Bay, ON","Sault Ste. Marie, ON","St. Catharines, ON",
   "Guelph, ON","Cambridge, ON","Whitby, ON","Ajax, ON","Pickering, ON",
   "Montreal, QC","Quebec City, QC","Laval, QC","Gatineau, QC","Longueuil, QC",
-  "Sherbrooke, QC","Saguenay, QC","Levis, QC","Trois-Rivières, QC","Terrebonne, QC",
+  "Sherbrooke, QC","Saguenay, QC","Levis, QC","Trois-Rivieres, QC","Terrebonne, QC",
   "Vancouver, BC","Surrey, BC","Burnaby, BC","Richmond, BC","Kelowna, BC",
   "Abbotsford, BC","Coquitlam, BC","Langley, BC","Saanich, BC","Delta, BC",
   "Nanaimo, BC","Kamloops, BC","Prince George, BC","Victoria, BC",
@@ -81,41 +79,65 @@ const CITIES = [
   "Yellowknife, NT","Whitehorse, YT","Iqaluit, NU",
 ].sort()
 
-// ── North American timezones ──────────────────────────────────────────────────
 const TIMEZONES = [
-  // USA
-  { value: "America/New_York",              label: "Eastern Time — New York, Boston, Miami" },
-  { value: "America/Indiana/Indianapolis",  label: "Eastern Time — Indiana" },
-  { value: "America/Kentucky/Louisville",   label: "Eastern Time — Kentucky" },
-  { value: "America/Detroit",               label: "Eastern Time — Michigan" },
-  { value: "America/Chicago",               label: "Central Time — Chicago, Dallas, Houston" },
-  { value: "America/Indiana/Knox",          label: "Central Time — Indiana (Knox)" },
-  { value: "America/North_Dakota/Center",   label: "Central Time — North Dakota" },
-  { value: "America/Menominee",             label: "Central Time — Upper Michigan" },
-  { value: "America/Denver",               label: "Mountain Time — Denver, Salt Lake City" },
-  { value: "America/Boise",                label: "Mountain Time — Idaho" },
-  { value: "America/Phoenix",              label: "Mountain Time — Arizona (no DST)" },
-  { value: "America/Los_Angeles",          label: "Pacific Time — Los Angeles, Seattle, Las Vegas" },
-  { value: "America/Anchorage",            label: "Alaska Time — Anchorage" },
-  { value: "Pacific/Honolulu",             label: "Hawaii Time — Honolulu" },
-  // Canada
-  { value: "America/Toronto",              label: "Eastern Time — Toronto, Ottawa (ON/QC)" },
-  { value: "America/Iqaluit",              label: "Eastern Time — Nunavut" },
-  { value: "America/Winnipeg",             label: "Central Time — Winnipeg (MB)" },
-  { value: "America/Regina",               label: "Central Time — Saskatchewan (no DST)" },
-  { value: "America/Edmonton",             label: "Mountain Time — Edmonton, Calgary (AB)" },
-  { value: "America/Yellowknife",          label: "Mountain Time — Northwest Territories" },
-  { value: "America/Vancouver",            label: "Pacific Time — Vancouver, Victoria (BC)" },
-  { value: "America/Whitehorse",           label: "Pacific Time — Yukon" },
-  { value: "America/Halifax",              label: "Atlantic Time — Halifax (NS/NB/PEI)" },
-  { value: "America/Moncton",              label: "Atlantic Time — Moncton (NB)" },
-  { value: "America/Glace_Bay",            label: "Atlantic Time — Cape Breton (NS)" },
-  { value: "America/Goose_Bay",            label: "Atlantic Time — Labrador" },
-  { value: "America/St_Johns",             label: "Newfoundland Time — St. John's" },
+  { value: "America/New_York", label: "Eastern Time - New York, Boston, Miami" },
+  { value: "America/Indiana/Indianapolis", label: "Eastern Time - Indiana" },
+  { value: "America/Kentucky/Louisville", label: "Eastern Time - Kentucky" },
+  { value: "America/Detroit", label: "Eastern Time - Michigan" },
+  { value: "America/Chicago", label: "Central Time - Chicago, Dallas, Houston" },
+  { value: "America/Indiana/Knox", label: "Central Time - Indiana (Knox)" },
+  { value: "America/North_Dakota/Center", label: "Central Time - North Dakota" },
+  { value: "America/Menominee", label: "Central Time - Upper Michigan" },
+  { value: "America/Denver", label: "Mountain Time - Denver, Salt Lake City" },
+  { value: "America/Boise", label: "Mountain Time - Idaho" },
+  { value: "America/Phoenix", label: "Mountain Time - Arizona (no DST)" },
+  { value: "America/Los_Angeles", label: "Pacific Time - Los Angeles, Seattle, Las Vegas" },
+  { value: "America/Anchorage", label: "Alaska Time - Anchorage" },
+  { value: "Pacific/Honolulu", label: "Hawaii Time - Honolulu" },
+  { value: "America/Toronto", label: "Eastern Time - Toronto, Ottawa (ON/QC)" },
+  { value: "America/Iqaluit", label: "Eastern Time - Nunavut" },
+  { value: "America/Winnipeg", label: "Central Time - Winnipeg (MB)" },
+  { value: "America/Regina", label: "Central Time - Saskatchewan (no DST)" },
+  { value: "America/Edmonton", label: "Mountain Time - Edmonton, Calgary (AB)" },
+  { value: "America/Yellowknife", label: "Mountain Time - Northwest Territories" },
+  { value: "America/Vancouver", label: "Pacific Time - Vancouver, Victoria (BC)" },
+  { value: "America/Whitehorse", label: "Pacific Time - Yukon" },
+  { value: "America/Halifax", label: "Atlantic Time - Halifax (NS/NB/PEI)" },
+  { value: "America/Moncton", label: "Atlantic Time - Moncton (NB)" },
+  { value: "America/Glace_Bay", label: "Atlantic Time - Cape Breton (NS)" },
+  { value: "America/Goose_Bay", label: "Atlantic Time - Labrador" },
+  { value: "America/St_Johns", label: "Newfoundland Time - St. John's" },
 ]
 
-// ── Component ─────────────────────────────────────────────────────────────────
-interface Props { city: string; timezone: string; phone: string }
+interface Props {
+  city: string
+  timezone: string
+  phone: string
+}
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: "0.72rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.11em",
+  color: "#71717a",
+  marginBottom: "0.45rem",
+}
+
+const fieldStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "0.9rem 1rem",
+  borderRadius: "16px",
+  background: "#fcfcff",
+  border: "1px solid rgba(99,102,241,0.14)",
+  color: "var(--text)",
+  fontSize: "0.92rem",
+  fontFamily: "'Inter',sans-serif",
+  outline: "none",
+  boxSizing: "border-box",
+  boxShadow: "inset 0 1px 2px rgba(15,23,42,0.04)",
+}
 
 export function LocationForm({ city, timezone, phone }: Props) {
   const router = useRouter()
@@ -132,7 +154,6 @@ export function LocationForm({ city, timezone, phone }: Props) {
   const [serverError, setServerError] = useState("")
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -143,35 +164,41 @@ export function LocationForm({ city, timezone, phone }: Props) {
     return () => document.removeEventListener("mousedown", handler)
   }, [])
 
-  function handleCityInput(val: string) {
-    setCityQuery(val)
-    setForm((f) => ({ ...f, city: val }))
-    setErrors((e) => ({ ...e, city: "" }))
-    if (val.trim().length < 2) { setSuggestions([]); setShowDropdown(false); return }
-    const q = val.toLowerCase()
-    const matches = CITIES.filter((c) => c.toLowerCase().startsWith(q)).slice(0, 8)
-    if (matches.length === 0) {
-      const contains = CITIES.filter((c) => c.toLowerCase().includes(q)).slice(0, 8)
-      setSuggestions(contains)
-    } else {
-      setSuggestions(matches)
+  function handleCityInput(value: string) {
+    setCityQuery(value)
+    setForm((current) => ({ ...current, city: value }))
+    setErrors((current) => ({ ...current, city: "" }))
+    if (value.trim().length < 2) {
+      setSuggestions([])
+      setShowDropdown(false)
+      return
     }
+
+    const query = value.toLowerCase()
+    const startsWith = CITIES.filter((item) => item.toLowerCase().startsWith(query)).slice(0, 8)
+    const matches = startsWith.length > 0
+      ? startsWith
+      : CITIES.filter((item) => item.toLowerCase().includes(query)).slice(0, 8)
+    setSuggestions(matches)
     setShowDropdown(true)
   }
 
-  function selectCity(c: string) {
-    setCityQuery(c)
-    setForm((f) => ({ ...f, city: c }))
+  function selectCity(value: string) {
+    setCityQuery(value)
+    setForm((current) => ({ ...current, city: value }))
     setSuggestions([])
     setShowDropdown(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const errs: Record<string, string> = {}
-    if (!form.city.trim()) errs.city = "City is required"
-    if (!form.timezone) errs.timezone = "Timezone is required"
-    if (Object.keys(errs).length) { setErrors(errs); return }
+    const nextErrors: Record<string, string> = {}
+    if (!form.city.trim()) nextErrors.city = "City is required"
+    if (!form.timezone) nextErrors.timezone = "Timezone is required"
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors)
+      return
+    }
 
     setLoading(true)
     setServerError("")
@@ -186,8 +213,12 @@ export function LocationForm({ city, timezone, phone }: Props) {
           onboarding_step: 2,
         }),
       })
-      if (res.ok) { router.push("/onboarding/family") }
-      else { setServerError("Something went wrong. Please try again."); setLoading(false) }
+      if (res.ok) {
+        router.push("/onboarding/family")
+      } else {
+        setServerError("Something went wrong. Please try again.")
+        setLoading(false)
+      }
     } catch {
       setServerError("Network error. Please try again.")
       setLoading(false)
@@ -196,141 +227,157 @@ export function LocationForm({ city, timezone, phone }: Props) {
 
   return (
     <Card className="fade-up">
-      <h2 style={{ fontSize: "1.4rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-        Your Location
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.4rem",
+          borderRadius: "999px",
+          padding: "0.3rem 0.65rem",
+          background: "rgba(56,189,248,0.1)",
+          color: "#0369a1",
+          fontSize: "0.72rem",
+          fontWeight: 800,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          marginBottom: "0.9rem",
+        }}
+      >
+        Location
+      </div>
+
+      <h2 style={{ fontSize: "clamp(1.65rem, 3vw, 2.05rem)", fontWeight: 800, marginBottom: "0.45rem" }}>
+        Keep your family timing local
       </h2>
-      <p style={{ color: "var(--muted)", fontSize: "0.8rem", marginBottom: "1.5rem", lineHeight: 1.5 }}>
-        Used for local school calendars and reminder times.
+      <p style={{ color: "#5b6475", fontSize: "0.92rem", marginBottom: "1.65rem", lineHeight: 1.7, maxWidth: "46ch" }}>
+        This helps Famco place reminders, school timing, and appointment suggestions in the right place from the start.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-
-        {/* City search */}
         <div style={{ position: "relative" }} ref={dropdownRef}>
-          <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)", marginBottom: "0.4rem" }}>
-            City
-          </label>
+          <label style={labelStyle}>City</label>
           <input
             type="text"
             value={cityQuery}
             onChange={(e) => handleCityInput(e.target.value)}
             onFocus={() => cityQuery.length >= 2 && suggestions.length > 0 && setShowDropdown(true)}
-            placeholder="Type your city…"
+            placeholder="Type your city"
             autoComplete="off"
             style={{
-              width: "100%", padding: "0.7rem 1rem", borderRadius: "12px",
-              background: "rgba(10,8,20,0.6)",
-              border: errors.city ? "1px solid #f87171" : "1px solid var(--border)",
-              color: "var(--text)", fontSize: "0.875rem",
-              fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box",
+              ...fieldStyle,
+              border: errors.city ? "1px solid #f87171" : fieldStyle.border,
             }}
           />
           {errors.city && <p style={{ fontSize: "0.72rem", color: "#f87171", marginTop: "0.3rem" }}>{errors.city}</p>}
           {showDropdown && suggestions.length > 0 && (
-            <div style={{
-              position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
-              background: "rgba(18,15,35,0.98)", border: "1px solid var(--border)",
-              borderRadius: "12px", marginTop: "4px", overflow: "hidden",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-            }}>
-              {suggestions.map((c) => (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 50,
+                background: "rgba(255,255,255,0.98)",
+                border: "1px solid rgba(99,102,241,0.12)",
+                borderRadius: "16px",
+                marginTop: "6px",
+                overflow: "hidden",
+                boxShadow: "0 16px 40px rgba(15,23,42,0.12)",
+              }}
+            >
+              {suggestions.map((item) => (
                 <button
-                  key={c} type="button" onClick={() => selectCity(c)}
+                  key={item}
+                  type="button"
+                  onClick={() => selectCity(item)}
                   style={{
-                    width: "100%", textAlign: "left", padding: "0.65rem 1rem",
-                    background: "none", border: "none", color: "var(--text)",
-                    fontSize: "0.85rem", cursor: "pointer", fontFamily: "'Inter',sans-serif",
-                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "0.75rem 1rem",
+                    background: "none",
+                    border: "none",
+                    color: "var(--text)",
+                    fontSize: "0.86rem",
+                    cursor: "pointer",
+                    fontFamily: "'Inter',sans-serif",
+                    borderBottom: "1px solid rgba(99,102,241,0.08)",
                     transition: "background 0.15s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(99,102,241,0.12)")}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(99,102,241,0.06)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
                 >
-                  {c}
+                  {item}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Timezone */}
         <div>
-          <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)", marginBottom: "0.4rem" }}>
-            Timezone
-          </label>
+          <label style={labelStyle}>Timezone</label>
           <select
             value={form.timezone}
-            onChange={(e) => { setForm((f) => ({ ...f, timezone: e.target.value })); setErrors((er) => ({ ...er, timezone: "" })) }}
+            onChange={(e) => {
+              setForm((current) => ({ ...current, timezone: e.target.value }))
+              setErrors((current) => ({ ...current, timezone: "" }))
+            }}
             style={{
-              width: "100%", padding: "0.7rem 1rem", borderRadius: "12px",
-              background: "rgba(10,8,20,0.6)",
-              border: errors.timezone ? "1px solid #f87171" : "1px solid var(--border)",
-              color: "var(--text)", fontSize: "0.875rem",
-              fontFamily: "'Inter',sans-serif", outline: "none", cursor: "pointer",
+              ...fieldStyle,
+              border: errors.timezone ? "1px solid #f87171" : fieldStyle.border,
+              cursor: "pointer",
             }}
           >
-            <option value="">Select timezone…</option>
-            <optgroup label="── United States ──">
-              {TIMEZONES.filter((_, i) => i <= 13).map((tz) => (
-                <option key={tz.value} value={tz.value}>{tz.label}</option>
+            <option value="">Select timezone</option>
+            <optgroup label="United States">
+              {TIMEZONES.filter((_, index) => index <= 13).map((timezoneOption) => (
+                <option key={timezoneOption.value} value={timezoneOption.value}>{timezoneOption.label}</option>
               ))}
             </optgroup>
-            <optgroup label="── Canada ──">
-              {TIMEZONES.filter((_, i) => i >= 14).map((tz) => (
-                <option key={tz.value} value={tz.value}>{tz.label}</option>
+            <optgroup label="Canada">
+              {TIMEZONES.filter((_, index) => index >= 14).map((timezoneOption) => (
+                <option key={timezoneOption.value} value={timezoneOption.value}>{timezoneOption.label}</option>
               ))}
             </optgroup>
           </select>
           {errors.timezone && <p style={{ fontSize: "0.72rem", color: "#f87171", marginTop: "0.3rem" }}>{errors.timezone}</p>}
         </div>
 
-        {/* Phone */}
         <div>
-          <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)", marginBottom: "0.4rem" }}>
-            Phone <span style={{ color: "var(--muted)", fontWeight: 400, textTransform: "none" }}>(optional)</span>
+          <label style={labelStyle}>
+            Phone <span style={{ color: "var(--muted)", fontWeight: 500, textTransform: "none", letterSpacing: "normal" }}>(optional)</span>
           </label>
           <input
             type="tel"
             value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, phone: e.target.value }))}
             placeholder="e.g. +1 416 555 0100"
-            style={{
-              width: "100%", padding: "0.7rem 1rem", borderRadius: "12px",
-              background: "rgba(10,8,20,0.6)", border: "1px solid var(--border)",
-              color: "var(--text)", fontSize: "0.875rem",
-              fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box",
-            }}
+            style={fieldStyle}
           />
         </div>
 
         {serverError && <p style={{ color: "#f87171", fontSize: "0.8rem" }}>{serverError}</p>}
 
-        <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.25rem" }}>
-          <button
-            type="button"
-            onClick={() => router.push("/onboarding/profile")}
-            style={{
-              flex: 1, padding: "0.7rem", borderRadius: "10px",
-              background: "none", border: "1px solid var(--border)",
-              color: "var(--muted)", fontSize: "0.85rem", cursor: "pointer",
-              fontFamily: "'Inter',sans-serif",
-            }}
-          >
-            ← Back
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              flex: 2, padding: "0.7rem", borderRadius: "10px",
-              background: loading ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)",
-              border: "none", color: "white", fontSize: "0.85rem",
-              fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
-              fontFamily: "'Inter',sans-serif",
-            }}
-          >
-            {loading ? "Saving…" : "Continue →"}
-          </button>
+        <div
+          style={{
+            marginTop: "0.35rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.85rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <Button type="button" variant="outline" onClick={() => router.push("/onboarding/profile")}>
+            Back
+          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+              Used for reminders and local household timing.
+            </div>
+            <Button type="submit" loading={loading}>
+              {loading ? "Saving..." : "Continue"}
+            </Button>
+          </div>
         </div>
       </form>
     </Card>

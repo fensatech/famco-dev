@@ -1,8 +1,10 @@
 "use client"
+
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/Card"
 import { Input } from "@/components/ui/Input"
+import { Button } from "@/components/ui/Button"
 
 interface KidRow {
   name: string
@@ -15,6 +17,35 @@ interface Props {
 
 const emptyKid = (): KidRow => ({ name: "", dob: "" })
 
+const badgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.4rem",
+  borderRadius: "999px",
+  padding: "0.3rem 0.65rem",
+  background: "rgba(52,211,153,0.14)",
+  color: "#047857",
+  fontSize: "0.72rem",
+  fontWeight: 800,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+}
+
+const dateFieldStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "0.9rem 1rem",
+  borderRadius: "16px",
+  background: "#fcfcff",
+  border: "1px solid rgba(99,102,241,0.14)",
+  color: "var(--text)",
+  fontSize: "0.92rem",
+  fontFamily: "'Inter',sans-serif",
+  outline: "none",
+  boxSizing: "border-box",
+  boxShadow: "inset 0 1px 2px rgba(15,23,42,0.04)",
+  colorScheme: "light",
+}
+
 export function KidsForm({ initialKids }: Props) {
   const router = useRouter()
   const [kids, setKids] = useState<KidRow[]>(initialKids.length > 0 ? initialKids : [])
@@ -22,17 +53,17 @@ export function KidsForm({ initialKids }: Props) {
   const [loading, setLoading] = useState(false)
   const [serverError, setServerError] = useState("")
 
-  function updateKid(i: number, field: keyof KidRow, value: string) {
-    setKids((prev) => prev.map((k, idx) => (idx === i ? { ...k, [field]: value } : k)))
-    setErrors((e) => ({ ...e, [`${field}_${i}`]: "" }))
+  function updateKid(index: number, field: keyof KidRow, value: string) {
+    setKids((current) => current.map((kid, kidIndex) => (kidIndex === index ? { ...kid, [field]: value } : kid)))
+    setErrors((current) => ({ ...current, [`${field}_${index}`]: "" }))
   }
 
   function addKid() {
-    setKids((prev) => [...prev, emptyKid()])
+    setKids((current) => [...current, emptyKid()])
   }
 
-  function removeKid(i: number) {
-    setKids((prev) => prev.filter((_, idx) => idx !== i))
+  function removeKid(index: number) {
+    setKids((current) => current.filter((_, kidIndex) => kidIndex !== index))
   }
 
   async function finish(kidsToSave: KidRow[]) {
@@ -43,7 +74,7 @@ export function KidsForm({ initialKids }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kids: kidsToSave.map((k) => ({ name: k.name.trim(), dob: k.dob || null })),
+          kids: kidsToSave.map((kid) => ({ name: kid.name.trim(), dob: kid.dob || null })),
         }),
       })
       if (res.ok) {
@@ -60,14 +91,19 @@ export function KidsForm({ initialKids }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const errs: Record<string, string> = {}
-    kids.forEach((k, i) => {
-      if (!k.name.trim()) { errs[`name_${i}`] = "Name is required" }
+    const nextErrors: Record<string, string> = {}
+
+    kids.forEach((kid, index) => {
+      if (!kid.name.trim()) {
+        nextErrors[`name_${index}`] = "Name is required"
+      }
     })
-    if (Object.keys(errs).length) {
-      setErrors(errs)
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors)
       return
     }
+
     await finish(kids)
   }
 
@@ -77,157 +113,228 @@ export function KidsForm({ initialKids }: Props) {
 
   return (
     <Card className="fade-up">
-      <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.375rem" }}>
-        Your Kids
+      <div style={badgeStyle}>Children Optional</div>
+
+      <h2
+        style={{
+          fontSize: "clamp(1.65rem, 3vw, 2.05rem)",
+          fontWeight: 800,
+          marginTop: "0.9rem",
+          marginBottom: "0.45rem",
+        }}
+      >
+        Add anyone you want Famco to recognize
       </h2>
-      <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginBottom: "0.5rem", lineHeight: 1.6 }}>
-        Optional — you can skip this and add children later in{" "}
-        <strong style={{ color: "var(--text)" }}>Manage Family</strong>.
-        Adding names and schools helps Famco recognise school emails and personalise Insights.
+      <p
+        style={{
+          color: "#5b6475",
+          fontSize: "0.92rem",
+          marginBottom: "1.6rem",
+          lineHeight: 1.7,
+          maxWidth: "49ch",
+        }}
+      >
+        You can skip this and head straight to the dashboard, or add children now so Famco can better
+        recognize school, activity, and appointment emails from the beginning.
       </p>
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1.25rem" }}>
-
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.15rem" }}>
         {kids.length === 0 ? (
-          <button
-            type="button"
-            onClick={addKid}
+          <div
             style={{
-              background: "rgba(255,255,255,0.02)",
-              border: "2px dashed rgba(255,255,255,0.12)",
-              borderRadius: "14px",
-              padding: "1.5rem",
-              color: "var(--muted)",
-              fontSize: "0.875rem",
-              cursor: "pointer",
-              textAlign: "center",
-              fontFamily: "'Inter',sans-serif",
+              borderRadius: "24px",
+              border: "1px dashed rgba(99,102,241,0.22)",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(245,247,255,0.84))",
+              padding: "1.35rem",
             }}
           >
-            <div style={{ fontSize: "1.5rem", marginBottom: "0.4rem" }}>👶</div>
-            + Add a child
-          </button>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  width: "56px",
+                  height: "56px",
+                  borderRadius: "18px",
+                  background: "rgba(99,102,241,0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.4rem",
+                  flexShrink: 0,
+                }}
+              >
+                + 
+              </div>
+              <div style={{ flex: 1, minWidth: "220px" }}>
+                <div
+                  style={{
+                    fontFamily: "'Outfit',sans-serif",
+                    fontSize: "1.1rem",
+                    fontWeight: 700,
+                    marginBottom: "0.35rem",
+                    color: "#111827",
+                  }}
+                >
+                  Start simple, then build the household later
+                </div>
+                <div style={{ fontSize: "0.86rem", lineHeight: 1.7, color: "#667085", marginBottom: "1rem" }}>
+                  Adding children now improves school and activity matching, but nothing is required here.
+                  Manage Family can always fill in the deeper details later.
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.55rem", marginBottom: "1rem" }}>
+                  {[
+                    "Better school email recognition",
+                    "More relevant calendar suggestions",
+                    "Cleaner member matching in Insights",
+                  ].map((item) => (
+                    <span
+                      key={item}
+                      style={{
+                        borderRadius: "999px",
+                        padding: "0.45rem 0.75rem",
+                        background: "rgba(79,70,229,0.08)",
+                        color: "#4338ca",
+                        fontSize: "0.76rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+                <Button type="button" onClick={addKid}>
+                  Add a child
+                </Button>
+              </div>
+            </div>
+          </div>
         ) : (
           <>
-            {kids.map((kid, i) => (
+            {kids.map((kid, index) => (
               <div
-                key={i}
+                key={index}
                 style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "14px",
+                  borderRadius: "24px",
+                  border: "1px solid rgba(99,102,241,0.12)",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,255,0.92))",
+                  boxShadow: "0 10px 28px rgba(15,23,42,0.04)",
                   padding: "1rem",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "0.875rem",
+                  gap: "0.95rem",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Child {i + 1}
-                  </span>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.8rem", flexWrap: "wrap" }}>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "0.74rem",
+                        fontWeight: 800,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.1em",
+                        color: "#6366f1",
+                        marginBottom: "0.2rem",
+                      }}
+                    >
+                      Child {index + 1}
+                    </div>
+                    <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700, fontSize: "1rem", color: "#111827" }}>
+                      Household member
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => removeKid(i)}
-                    style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "0.75rem", padding: "0.25rem 0.5rem", borderRadius: "6px", fontFamily: "'Inter',sans-serif" }}
+                    onClick={() => removeKid(index)}
+                    style={{
+                      borderRadius: "999px",
+                      border: "1px solid rgba(239,68,68,0.18)",
+                      background: "rgba(254,242,242,0.9)",
+                      color: "#dc2626",
+                      padding: "0.45rem 0.8rem",
+                      fontSize: "0.76rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: "'Inter',sans-serif",
+                    }}
                   >
                     Remove
                   </button>
                 </div>
+
                 <Input
                   label="Name"
                   value={kid.name}
-                  onChange={(e) => updateKid(i, "name", e.target.value)}
-                  error={errors[`name_${i}`]}
+                  onChange={(e) => updateKid(index, "name", e.target.value)}
+                  error={errors[`name_${index}`]}
                   placeholder="e.g. Emma"
                 />
+
                 <div className="flex flex-col gap-1.5">
-                  <label style={{ fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>
-                    Date of Birth (optional)
+                  <label
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      color: "#71717a",
+                    }}
+                  >
+                    Birth date <span style={{ textTransform: "none", letterSpacing: "normal", fontWeight: 500 }}>(optional)</span>
                   </label>
                   <input
                     type="date"
                     value={kid.dob}
-                    onChange={(e) => updateKid(i, "dob", e.target.value)}
+                    onChange={(e) => updateKid(index, "dob", e.target.value)}
                     max={new Date().toISOString().split("T")[0]}
-                    style={{
-                      width: "100%", padding: "0.75rem 1rem", borderRadius: "12px",
-                      background: "rgba(10,8,20,0.6)", border: "1px solid var(--border)",
-                      color: "var(--text)", fontSize: "0.875rem", fontFamily: "'Inter', sans-serif",
-                      outline: "none", colorScheme: "dark",
+                    style={dateFieldStyle}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "var(--accent)"
+                      e.currentTarget.style.boxShadow = "0 0 0 4px rgba(99,102,241,0.14), inset 0 1px 2px rgba(15,23,42,0.04)"
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(99,102,241,0.14)"
+                      e.currentTarget.style.boxShadow = "inset 0 1px 2px rgba(15,23,42,0.04)"
                     }}
                   />
                 </div>
               </div>
             ))}
 
-            <button
-              type="button"
-              onClick={addKid}
-              style={{
-                background: "none", border: "2px dashed rgba(255,255,255,0.12)",
-                borderRadius: "14px", padding: "0.875rem", color: "var(--muted)",
-                fontSize: "0.875rem", cursor: "pointer", fontFamily: "'Inter',sans-serif",
-              }}
-            >
-              + Add another child
-            </button>
+            <Button type="button" variant="outline" onClick={addKid}>
+              Add another child
+            </Button>
           </>
         )}
 
         {serverError && <p style={{ color: "#f87171", fontSize: "0.8rem" }}>{serverError}</p>}
 
-        <div style={{ display: "flex", gap: "0.75rem" }}>
-          <button
-            type="button"
-            onClick={() => router.push("/onboarding/family")}
-            style={{
-              flex: 1, padding: "0.7rem", borderRadius: "10px",
-              background: "none", border: "1px solid var(--border)",
-              color: "var(--muted)", fontSize: "0.85rem", cursor: "pointer",
-              fontFamily: "'Inter',sans-serif",
-            }}
-          >
-            ← Back
-          </button>
-          {kids.length > 0 ? (
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                flex: 2, padding: "0.7rem", borderRadius: "10px",
-                background: loading ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)",
-                border: "none", color: "white", fontSize: "0.85rem",
-                fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
-                fontFamily: "'Inter',sans-serif",
-              }}
-            >
-              {loading ? "Saving…" : "Finish Setup →"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSkip}
-              disabled={loading}
-              style={{
-                flex: 2, padding: "0.7rem", borderRadius: "10px",
-                background: loading ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)",
-                border: "none", color: "white", fontSize: "0.85rem",
-                fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
-                fontFamily: "'Inter',sans-serif",
-              }}
-            >
-              {loading ? "Setting up…" : "Go to Dashboard →"}
-            </button>
-          )}
+        <div
+          style={{
+            marginTop: "0.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.85rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <Button type="button" variant="outline" onClick={() => router.push("/onboarding/family")}>
+            Back
+          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+              You can always add or edit children later in Manage Family.
+            </div>
+            {kids.length > 0 ? (
+              <Button type="submit" loading={loading}>
+                {loading ? "Saving..." : "Finish setup"}
+              </Button>
+            ) : (
+              <Button type="button" loading={loading} onClick={handleSkip}>
+                {loading ? "Setting up..." : "Go to dashboard"}
+              </Button>
+            )}
+          </div>
         </div>
-
-        {kids.length === 0 && (
-          <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--muted)", marginTop: "-0.25rem" }}>
-            You can add children anytime in{" "}
-            <strong style={{ color: "var(--text)" }}>Manage Family</strong>.
-          </p>
-        )}
       </form>
     </Card>
   )

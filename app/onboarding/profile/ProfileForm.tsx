@@ -1,4 +1,5 @@
 "use client"
+
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/Card"
@@ -53,35 +54,55 @@ export function ProfileForm({ firstName, lastName }: Props) {
 
   return (
     <Card className="fade-up">
-      <h2
+      <div
         style={{
-          fontSize: "1.5rem",
-          fontWeight: 700,
-          marginBottom: "0.375rem",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.4rem",
+          borderRadius: "999px",
+          padding: "0.3rem 0.65rem",
+          background: "rgba(99,102,241,0.08)",
+          color: "#4f46e5",
+          fontSize: "0.72rem",
+          fontWeight: 800,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          marginBottom: "0.9rem",
         }}
       >
-        Your Profile
+        Profile
+      </div>
+
+      <h2
+        style={{
+          fontSize: "clamp(1.65rem, 3vw, 2.05rem)",
+          fontWeight: 800,
+          marginBottom: "0.45rem",
+        }}
+      >
+        Tell us who is getting things started
       </h2>
       <p
         style={{
-          color: "var(--muted)",
-          fontSize: "0.875rem",
-          marginBottom: "2rem",
-          lineHeight: 1.6,
+          color: "#5b6475",
+          fontSize: "0.92rem",
+          marginBottom: "1.75rem",
+          lineHeight: 1.7,
+          maxWidth: "44ch",
         }}
       >
-        Let's start with your name so we can personalise your experience.
+        We use your name to personalize the dashboard and identify the primary household owner for setup and billing later.
       </p>
 
       <form
         onSubmit={handleSubmit}
-        style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}
+        style={{ display: "flex", flexDirection: "column", gap: "1.15rem" }}
       >
         <Input
           label="First Name"
           value={form.first_name}
           onChange={(e) =>
-            setForm((f) => ({ ...f, first_name: e.target.value }))
+            setForm((current) => ({ ...current, first_name: e.target.value }))
           }
           error={errors.first_name}
           autoFocus
@@ -91,7 +112,7 @@ export function ProfileForm({ firstName, lastName }: Props) {
           label="Last Name"
           value={form.last_name}
           onChange={(e) =>
-            setForm((f) => ({ ...f, last_name: e.target.value }))
+            setForm((current) => ({ ...current, last_name: e.target.value }))
           }
           error={errors.last_name}
           placeholder="e.g. Johnson"
@@ -99,19 +120,24 @@ export function ProfileForm({ firstName, lastName }: Props) {
         {serverError && (
           <p style={{ color: "#f87171", fontSize: "0.8rem" }}>{serverError}</p>
         )}
-        <button
-          type="submit"
-          disabled={loading}
+
+        <div
           style={{
-            width: "100%", padding: "0.7rem", borderRadius: "10px",
-            background: loading ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)",
-            border: "none", color: "white", fontSize: "0.85rem",
-            fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
-            fontFamily: "'Inter',sans-serif", marginTop: "0.25rem",
+            marginTop: "0.35rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "1rem",
+            flexWrap: "wrap",
           }}
         >
-          {loading ? "Saving…" : "Continue →"}
-        </button>
+          <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+            You can change these details later in Manage Family.
+          </div>
+          <Button type="submit" loading={loading}>
+            {loading ? "Saving..." : "Continue"}
+          </Button>
+        </div>
       </form>
     </Card>
   )
