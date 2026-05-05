@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/Input"
 import { Button } from "@/components/ui/Button"
 
 interface KidRow {
-  name: string
+  firstName: string
+  lastName: string
   dob: string
 }
 
@@ -15,7 +16,7 @@ interface Props {
   initialKids: KidRow[]
 }
 
-const emptyKid = (): KidRow => ({ name: "", dob: "" })
+const emptyKid = (): KidRow => ({ firstName: "", lastName: "", dob: "" })
 
 const badgeStyle: React.CSSProperties = {
   display: "inline-flex",
@@ -46,6 +47,42 @@ const dateFieldStyle: React.CSSProperties = {
   colorScheme: "light",
 }
 
+const secondaryButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.45rem",
+  minWidth: "120px",
+  padding: "0.82rem 1.05rem",
+  borderRadius: "16px",
+  border: "1px solid rgba(99,102,241,0.18)",
+  background: "rgba(255,255,255,0.94)",
+  color: "#4f46e5",
+  fontSize: "0.84rem",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Outfit', sans-serif",
+  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
+}
+
+const addChildButtonStyle: React.CSSProperties = {
+  width: "100%",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.55rem",
+  padding: "0.9rem 1rem",
+  borderRadius: "18px",
+  border: "1px dashed rgba(99,102,241,0.26)",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245,247,255,0.92))",
+  color: "#4f46e5",
+  fontSize: "0.85rem",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Outfit', sans-serif",
+  boxShadow: "0 12px 28px rgba(99,102,241,0.06)",
+}
+
 export function KidsForm({ initialKids }: Props) {
   const router = useRouter()
   const [kids, setKids] = useState<KidRow[]>(initialKids.length > 0 ? initialKids : [])
@@ -74,7 +111,12 @@ export function KidsForm({ initialKids }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kids: kidsToSave.map((kid) => ({ name: kid.name.trim(), dob: kid.dob || null })),
+          kids: kidsToSave.map((kid) => ({
+            name: [kid.firstName.trim(), kid.lastName.trim()].filter(Boolean).join(" "),
+            first_name: kid.firstName.trim() || null,
+            last_name: kid.lastName.trim() || null,
+            dob: kid.dob || null,
+          })),
         }),
       })
       if (res.ok) {
@@ -94,8 +136,8 @@ export function KidsForm({ initialKids }: Props) {
     const nextErrors: Record<string, string> = {}
 
     kids.forEach((kid, index) => {
-      if (!kid.name.trim()) {
-        nextErrors[`name_${index}`] = "Name is required"
+      if (!kid.firstName.trim()) {
+        nextErrors[`firstName_${index}`] = "First name is required"
       }
     })
 
@@ -201,9 +243,10 @@ export function KidsForm({ initialKids }: Props) {
                     </span>
                   ))}
                 </div>
-                <Button type="button" onClick={addKid}>
-                  Add a child
-                </Button>
+                <button type="button" onClick={addKid} style={addChildButtonStyle}>
+                  <span style={{ fontSize: "1rem", lineHeight: 1 }}>+</span>
+                  Add a child now
+                </button>
               </div>
             </div>
           </div>
@@ -260,13 +303,27 @@ export function KidsForm({ initialKids }: Props) {
                   </button>
                 </div>
 
-                <Input
-                  label="Name"
-                  value={kid.name}
-                  onChange={(e) => updateKid(index, "name", e.target.value)}
-                  error={errors[`name_${index}`]}
-                  placeholder="e.g. Emma"
-                />
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "0.9rem",
+                  }}
+                >
+                  <Input
+                    label="First Name"
+                    value={kid.firstName}
+                    onChange={(e) => updateKid(index, "firstName", e.target.value)}
+                    error={errors[`firstName_${index}`]}
+                    placeholder="e.g. Emma"
+                  />
+                  <Input
+                    label="Last Name"
+                    value={kid.lastName}
+                    onChange={(e) => updateKid(index, "lastName", e.target.value)}
+                    placeholder="e.g. Johnson"
+                  />
+                </div>
 
                 <div className="flex flex-col gap-1.5">
                   <label
@@ -299,9 +356,10 @@ export function KidsForm({ initialKids }: Props) {
               </div>
             ))}
 
-            <Button type="button" variant="outline" onClick={addKid}>
+            <button type="button" onClick={addKid} style={addChildButtonStyle}>
+              <span style={{ fontSize: "1rem", lineHeight: 1 }}>+</span>
               Add another child
-            </Button>
+            </button>
           </>
         )}
 
@@ -317,9 +375,9 @@ export function KidsForm({ initialKids }: Props) {
             flexWrap: "wrap",
           }}
         >
-          <Button type="button" variant="outline" onClick={() => router.push("/onboarding/family")}>
-            Back
-          </Button>
+          <button type="button" onClick={() => router.push("/onboarding/family")} style={secondaryButtonStyle}>
+            ← Back
+          </button>
           <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
             <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
               You can always add or edit children later in Manage Family.

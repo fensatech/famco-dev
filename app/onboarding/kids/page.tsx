@@ -13,7 +13,8 @@ export default async function KidsPage() {
   return (
     <KidsForm
       initialKids={existingKids.map((k) => ({
-        name: k.name,
+        firstName: k.first_name ?? k.name.split(" ")[0] ?? "",
+        lastName: k.last_name ?? k.name.split(" ").slice(1).join(" "),
         dob: k.dob ? new Date(k.dob).toISOString().split("T")[0] : "",
       }))}
     />

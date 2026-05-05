@@ -16,6 +16,9 @@ import { NavIcon } from "../components/NavIcon"
 
 interface Props {
   firstName: string
+  familyType: string | null
+  city: string
+  timezone: string
   kids: KidRow[]
   events: Event[]
   pendingTasks: Task[]
@@ -37,7 +40,7 @@ interface Props {
   readOnly?: boolean
 }
 
-export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memberOptions, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [], readOnly = false }: Props) {
+export function HomeTab({ firstName, familyType, city, timezone, kids, events, pendingTasks, reminders, memberOptions, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [], readOnly = false }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [todayExpenses, setTodayExpenses] = useState<ExpenseRow[]>([])
@@ -55,6 +58,21 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
   }, [today])
 
   const greetPart = (() => { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening" })()
+  const setupChecklist = useMemo(() => {
+    const gaps: string[] = []
+    if (!city.trim() || !timezone.trim()) gaps.push("confirm your location")
+    if (!familyType) gaps.push("choose your household type")
+    if (kids.length === 0) {
+      gaps.push("add children or household members")
+    } else if (!kids.some((kid) => kid.schoolName || kid.daycareName || kid.grade)) {
+      gaps.push("add school or daycare details")
+    }
+    return gaps
+  }, [city, familyType, kids, timezone])
+  const setupSummary =
+    setupChecklist.length <= 2
+      ? setupChecklist.join(" and ")
+      : `${setupChecklist.slice(0, 2).join(" and ")} and more`
 
   const cpSchedule = coparentingSchedule && coparentingSchedule.schedule_type !== "custom" ? coparentingSchedule : null
   const cpTodayParent = cpSchedule ? resolveParent(cpSchedule.schedule_type, cpSchedule.start_date, today, coparentingOverrides) : null
@@ -96,15 +114,15 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
         <p style={{ color: "var(--muted)", fontSize: "0.875rem", fontWeight: 400 }}>{todayLabel()}</p>
       </div>
 
-      {kids.length === 0 && (
+      {setupChecklist.length > 0 && (
         <div style={{ marginBottom: "1.5rem", borderRadius: "16px", background: "linear-gradient(135deg,rgba(99,102,241,0.1),rgba(139,92,246,0.08))", border: "1px solid rgba(99,102,241,0.2)", padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: "1rem" }}>
           <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "linear-gradient(135deg,#6366f1,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "1.1rem" }}>✨</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text)", marginBottom: "0.15rem" }}>Complete your family profile to improve Insights</p>
-            <p style={{ fontSize: "0.75rem", color: "var(--muted)", lineHeight: 1.5 }}>Add children, schools, and activities — Famco uses this to personalise email scanning and Insights accuracy.</p>
+            <p style={{ fontSize: "0.75rem", color: "var(--muted)", lineHeight: 1.5 }}>Head to Manage Family to {setupSummary} so Famco can match school, activity, and household emails more accurately.</p>
           </div>
           <button onClick={() => onNavigate("settings")} style={{ flexShrink: 0, padding: "0.45rem 0.875rem", borderRadius: "8px", background: "linear-gradient(135deg,#6366f1,#8B5CF6)", border: "none", color: "white", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer", fontFamily: "'Inter',sans-serif", whiteSpace: "nowrap" }}>
-            Set up →
+            Manage Family →
           </button>
         </div>
       )}

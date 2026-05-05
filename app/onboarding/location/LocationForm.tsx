@@ -109,6 +109,19 @@ const TIMEZONES = [
   { value: "America/St_Johns", label: "Newfoundland Time - St. John's" },
 ]
 
+const DEFAULT_CITY_SUGGESTIONS = [
+  "Toronto, ON",
+  "Vancouver, BC",
+  "Calgary, AB",
+  "Edmonton, AB",
+  "Montreal, QC",
+  "New York, NY",
+  "Los Angeles, CA",
+  "Chicago, IL",
+  "Seattle, WA",
+  "Dallas, TX",
+]
+
 interface Props {
   city: string
   timezone: string
@@ -137,6 +150,24 @@ const fieldStyle: React.CSSProperties = {
   outline: "none",
   boxSizing: "border-box",
   boxShadow: "inset 0 1px 2px rgba(15,23,42,0.04)",
+}
+
+const secondaryButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.45rem",
+  minWidth: "120px",
+  padding: "0.82rem 1.05rem",
+  borderRadius: "16px",
+  border: "1px solid rgba(99,102,241,0.18)",
+  background: "rgba(255,255,255,0.94)",
+  color: "#4f46e5",
+  fontSize: "0.84rem",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Outfit', sans-serif",
+  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
 }
 
 export function LocationForm({ city, timezone, phone }: Props) {
@@ -168,9 +199,15 @@ export function LocationForm({ city, timezone, phone }: Props) {
     setCityQuery(value)
     setForm((current) => ({ ...current, city: value }))
     setErrors((current) => ({ ...current, city: "" }))
+    if (value.trim().length === 0) {
+      setSuggestions(DEFAULT_CITY_SUGGESTIONS)
+      setShowDropdown(true)
+      return
+    }
+
     if (value.trim().length < 2) {
-      setSuggestions([])
-      setShowDropdown(false)
+      setSuggestions(DEFAULT_CITY_SUGGESTIONS.filter((item) => item.toLowerCase().includes(value.toLowerCase())).slice(0, 8))
+      setShowDropdown(true)
       return
     }
 
@@ -256,12 +293,24 @@ export function LocationForm({ city, timezone, phone }: Props) {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div style={{ position: "relative" }} ref={dropdownRef}>
           <label style={labelStyle}>City</label>
+          <div style={{ fontSize: "0.74rem", color: "var(--muted)", marginBottom: "0.45rem" }}>
+            Search and pick from Canada and United States cities for now.
+          </div>
           <input
             type="text"
             value={cityQuery}
             onChange={(e) => handleCityInput(e.target.value)}
-            onFocus={() => cityQuery.length >= 2 && suggestions.length > 0 && setShowDropdown(true)}
-            placeholder="Type your city"
+            onFocus={() => {
+              if (cityQuery.trim().length >= 2 && suggestions.length > 0) {
+                setShowDropdown(true)
+                return
+              }
+              if (cityQuery.trim().length === 0) {
+                setSuggestions(DEFAULT_CITY_SUGGESTIONS)
+                setShowDropdown(true)
+              }
+            }}
+            placeholder="Search a city in Canada or the U.S."
             autoComplete="off"
             style={{
               ...fieldStyle,
@@ -367,9 +416,9 @@ export function LocationForm({ city, timezone, phone }: Props) {
             flexWrap: "wrap",
           }}
         >
-          <Button type="button" variant="outline" onClick={() => router.push("/onboarding/profile")}>
-            Back
-          </Button>
+          <button type="button" onClick={() => router.push("/onboarding/profile")} style={secondaryButtonStyle}>
+            ← Back
+          </button>
           <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
             <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
               Used for reminders and local household timing.

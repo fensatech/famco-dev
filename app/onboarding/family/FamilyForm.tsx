@@ -26,6 +26,24 @@ const badgeStyle: React.CSSProperties = {
   textTransform: "uppercase",
 }
 
+const secondaryButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.45rem",
+  minWidth: "120px",
+  padding: "0.82rem 1.05rem",
+  borderRadius: "16px",
+  border: "1px solid rgba(99,102,241,0.18)",
+  background: "rgba(255,255,255,0.94)",
+  color: "#4f46e5",
+  fontSize: "0.84rem",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "'Outfit', sans-serif",
+  boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
+}
+
 export function FamilyForm({ familyType }: Props) {
   const router = useRouter()
   const [selected, setSelected] = useState<FamilyType | null>(familyType)
@@ -235,9 +253,9 @@ export function FamilyForm({ familyType }: Props) {
             flexWrap: "wrap",
           }}
         >
-          <Button type="button" variant="outline" onClick={() => router.push("/onboarding/location")}>
-            Back
-          </Button>
+          <button type="button" onClick={() => router.push("/onboarding/location")} style={secondaryButtonStyle}>
+            ← Back
+          </button>
           <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
             <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
               This helps Famco tune calendar and household context.

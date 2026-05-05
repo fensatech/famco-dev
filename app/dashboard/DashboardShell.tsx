@@ -503,6 +503,9 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
           {tab === "home" && (
             <HomeTab
               firstName={initialProfile.firstName}
+              familyType={initialProfile.familyType}
+              city={initialProfile.city}
+              timezone={initialProfile.timezone}
               kids={kids}
               events={todayEvents}
               pendingTasks={pending}
