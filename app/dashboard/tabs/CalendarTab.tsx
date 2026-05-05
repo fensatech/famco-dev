@@ -509,34 +509,39 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
 
       {/* WEEK VIEW — compressed time grid */}
       {view === "week" && (() => {
-        const HOUR_H = 60, HOUR_H_DEAD = 10, START_H = 6, END_H = 22
-        const HOURS = Array.from({ length: END_H - START_H + 1 }, (_, i) => START_H + i)
+        const HOUR_H = 64
+        const HOUR_H_DEAD = 0
         const days = getWeekDays()
 
-        // Determine which hours have events/tasks (+ 1 buffer hour each side)
-        const activeHours = new Set<number>()
-        const parseH = (t: string | null) => t ? parseInt(t.split(":")[0], 10) : -1
         const showEvs = typeFilter !== "tasks"
         const showTasks = typeFilter !== "events"
+        const timedEntries: { start: string | null; end: string | null }[] = []
         days.forEach((day) => {
           const ds = day.toISOString().split("T")[0]
-          const mark = (sh: number, eh: number) => {
-            for (let h = Math.max(START_H, sh - 1); h <= Math.min(END_H, (eh >= 0 ? eh : sh) + 1); h++) activeHours.add(h)
-          }
           if (showEvs) {
-            eventsForDate(day).filter((e) => !!e.start_time).forEach((e) => mark(parseH(e.start_time), parseH(e.end_time)))
+            eventsForDate(day).filter((e) => !!e.start_time).forEach((e) => timedEntries.push({ start: e.start_time, end: e.end_time }))
             gcalEventsForDate(ds).filter((e) => !e.allDay && e.start?.includes("T")).forEach((e) => {
-              const t = e.start!.split("T")[1]?.slice(0, 5) ?? null; const te = e.end?.includes("T") ? e.end.split("T")[1]?.slice(0, 5) ?? null : null
-              mark(parseH(t), parseH(te))
+              timedEntries.push({
+                start: e.start!.split("T")[1]?.slice(0, 5) ?? null,
+                end: e.end?.includes("T") ? e.end.split("T")[1]?.slice(0, 5) ?? null : null,
+              })
             })
-            filteredScanned(scannedForDate(ds)).filter((e) => !!e.start_time).forEach((e) => mark(parseH(e.start_time), parseH(e.end_time)))
+            filteredScanned(scannedForDate(ds)).filter((e) => !!e.start_time).forEach((e) => timedEntries.push({ start: e.start_time, end: e.end_time }))
           }
           if (showTasks) {
-            tasksForDate(ds).filter((t) => !!t.due_time).forEach((t) => mark(parseH(t.due_time), -1))
+            tasksForDate(ds).filter((t) => !!t.due_time).forEach((t) => timedEntries.push({ start: t.due_time, end: null }))
           }
         })
-        const hasEvents = activeHours.size > 0
-        function hourH(h: number) { return hasEvents && !activeHours.has(h) ? HOUR_H_DEAD : HOUR_H }
+        const timedHours = timedEntries
+          .flatMap((entry) => [entry.start, entry.end])
+          .filter((value): value is string => !!value)
+          .map((value) => parseInt(value.split(":")[0] ?? "", 10))
+          .filter((value) => Number.isFinite(value))
+        const hasTimedEntries = timedHours.length > 0
+        const earliestHour = hasTimedEntries ? Math.max(0, Math.min(...timedHours) - 1) : 8
+        const latestHour = hasTimedEntries ? Math.min(23, Math.max(...timedHours) + 1) : 17
+        const HOURS = Array.from({ length: latestHour - earliestHour + 1 }, (_, i) => earliestHour + i)
+        function hourH(hour: number) { void hour; return HOUR_H }
 
         function toY(time: string | null): number {
           if (!time) return 0
@@ -544,13 +549,13 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
           if (isNaN(hNum)) return 0
           let y = 0
           for (let i = 0; i < HOURS.length; i++) {
-            if (HOURS[i] === hNum) { y += ((mNum || 0) / 60) * hourH(hNum); return y }
+            if (HOURS[i] === hNum) { y += ((mNum || 0) / 60) * HOUR_H; return y }
             if (HOURS[i] > hNum) return y
-            y += hourH(HOURS[i])
+            y += HOUR_H
           }
           return y
         }
-        const totalH = HOURS.reduce((s, h) => s + hourH(h), 0)
+        const totalH = HOURS.length * HOUR_H
         const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6)
         const weekLabel = `${weekStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${weekEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
         return (
@@ -593,14 +598,20 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   )
                 })}
               </div>
-              <div style={{ overflowY: "auto", maxHeight: "540px" }}>
+              {!hasTimedEntries && (
+                <div style={{ padding: "1.5rem 1rem", textAlign: "center", color: "var(--muted)", background: "rgba(255,255,255,0.02)" }}>
+                  <p style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--text)", marginBottom: "0.25rem" }}>No timed events this week</p>
+                  <p style={{ fontSize: "0.74rem", lineHeight: 1.55 }}>All-day items stay visible above, and the time grid will expand automatically once appointments or scheduled tasks are added.</p>
+                </div>
+              )}
+              <div style={{ overflowY: "auto", maxHeight: "540px", display: hasTimedEntries ? undefined : "none" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,1fr)" }}>
                   <div>
                     {HOURS.map((h, i) => {
                       const hh = hourH(h)
                       return (
-                        <div key={h} style={{ height: hh, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", paddingRight: "0.4rem" }}>
-                          {i > 0 && hh >= HOUR_H && <span style={{ fontSize: "0.58rem", color: "var(--muted)", marginTop: "-0.45em" }}>{`${h % 12 || 12}${h < 12 ? "AM" : "PM"}`}</span>}
+                        <div key={h} style={{ height: HOUR_H, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", paddingRight: "0.4rem" }}>
+                          {i > 0 && <span style={{ fontSize: "0.58rem", color: "var(--muted)", marginTop: "-0.45em" }}>{`${h % 12 || 12}${h < 12 ? "AM" : "PM"}`}</span>}
                           {hh === HOUR_H_DEAD && i > 0 && <span style={{ fontSize: "0.42rem", color: "var(--muted)", opacity: 0.35 }}>·</span>}
                         </div>
                       )
