@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { DEFAULT_REMINDER_OFFSET_MINUTES, getReminderOffsetLabel, REMINDER_OFFSET_OPTIONS, type ReminderOffsetMinutes } from "@/lib/reminders"
 import type { Task } from "@/lib/db"
 import { inputSt, fieldLabelStyle } from "../../styles"
 
@@ -10,6 +11,7 @@ export type TaskEditData = {
   notes: string | null
   assignee_name: string | null
   recurrence: "daily" | "weekly" | "monthly" | null
+  reminder_offset_minutes: ReminderOffsetMinutes | null
 }
 
 interface Props {
@@ -26,6 +28,7 @@ export function EditTaskModal({ task, assigneeOptions = [], onSave, onCancel }: 
   const [notes, setNotes] = useState(task.notes ?? "")
   const [assigneeName, setAssigneeName] = useState(task.assignee_name ?? "")
   const [recurrence, setRecurrence] = useState<"daily" | "weekly" | "monthly" | "">(task.recurrence ?? "")
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<ReminderOffsetMinutes>((task.reminder_offset_minutes ?? DEFAULT_REMINDER_OFFSET_MINUTES) as ReminderOffsetMinutes)
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {
@@ -38,6 +41,7 @@ export function EditTaskModal({ task, assigneeOptions = [], onSave, onCancel }: 
       notes: notes.trim() || null,
       assignee_name: assigneeName || null,
       recurrence: recurrence || null,
+      reminder_offset_minutes: reminderOffsetMinutes,
     })
     setSaving(false)
     if (!ok) alert("Failed to save — please try again.")
@@ -103,6 +107,21 @@ export function EditTaskModal({ task, assigneeOptions = [], onSave, onCancel }: 
                 <option value="monthly">Monthly</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label style={fieldLabelStyle}>Reminder</label>
+            <select
+              value={String(reminderOffsetMinutes)}
+              onChange={(e) => setReminderOffsetMinutes(Number(e.target.value) as ReminderOffsetMinutes)}
+              style={{ ...inputSt, marginTop: "0.3rem" }}
+            >
+              {REMINDER_OFFSET_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {getReminderOffsetLabel(option.value, "task", !!dueTime)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

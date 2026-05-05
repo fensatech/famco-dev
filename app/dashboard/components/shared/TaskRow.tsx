@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { getReminderOffsetLabel } from "@/lib/reminders"
 import type { Task } from "@/lib/db"
 import { EditTaskModal } from "../modals/EditTaskModal"
 import type { TaskEditData } from "../modals/EditTaskModal"
@@ -49,10 +50,11 @@ export function TaskRow({ task, assigneeOptions = [], onToggle, onDelete, onEdit
           {dueLabel && !task.completed && (
             <div style={{ fontSize: "0.7rem", color: "#f472b6", marginTop: "0.15rem", fontWeight: 500 }}>📅 {dueLabel}</div>
           )}
-          {!task.completed && (task.assignee_name || task.recurrence) && (
+          {!task.completed && (task.assignee_name || task.recurrence || task.due_date) && (
             <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
               {task.assignee_name && <span style={{ fontSize: "0.64rem", color: "#6366F1", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: "999px", padding: "0.1rem 0.45rem", fontWeight: 700 }}>Assigned to {task.assignee_name}</span>}
               {task.recurrence && <span style={{ fontSize: "0.64rem", color: "#8B5CF6", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.18)", borderRadius: "999px", padding: "0.1rem 0.45rem", fontWeight: 700 }}>Repeats {task.recurrence}</span>}
+              {task.due_date && <span style={{ fontSize: "0.64rem", color: "#EC4899", background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.18)", borderRadius: "999px", padding: "0.1rem 0.45rem", fontWeight: 700 }}>{getReminderOffsetLabel(task.reminder_offset_minutes, "task", !!task.due_time)}</span>}
             </div>
           )}
           {task.notes && !task.completed && (

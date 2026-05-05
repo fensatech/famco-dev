@@ -1,11 +1,12 @@
 "use client"
 import { useState } from "react"
+import { DEFAULT_REMINDER_OFFSET_MINUTES, getReminderOffsetLabel, REMINDER_OFFSET_OPTIONS, type ReminderOffsetMinutes } from "@/lib/reminders"
 import type { CalendarMemberOption } from "../../types"
 import { inputSt, fieldLabelStyle } from "../../styles"
 import { todayStr } from "../../lib/date"
 
 interface Props {
-  onSave: (title: string, date: string, time: string | null, memberName?: string | null) => void
+  onSave: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) => void
   onCancel: () => void
   saving: boolean
   initialDate?: string
@@ -17,10 +18,11 @@ export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOpt
   const [date, setDate] = useState(initialDate ?? todayStr())
   const [time, setTime] = useState("")
   const [memberName, setMemberName] = useState("")
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<ReminderOffsetMinutes>(DEFAULT_REMINDER_OFFSET_MINUTES)
 
   function handleSave() {
     if (!title.trim() || !date) return
-    onSave(title.trim(), date, time || null, memberName || null)
+    onSave(title.trim(), date, time || null, memberName || null, reminderOffsetMinutes)
   }
 
   return (
@@ -45,6 +47,20 @@ export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOpt
               <label style={fieldLabelStyle}>Time (optional)</label>
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem", colorScheme: "dark" }} />
             </div>
+          </div>
+          <div>
+            <label style={fieldLabelStyle}>Reminder</label>
+            <select
+              value={String(reminderOffsetMinutes)}
+              onChange={(e) => setReminderOffsetMinutes(Number(e.target.value) as ReminderOffsetMinutes)}
+              style={{ ...inputSt, marginTop: "0.3rem", cursor: "pointer" }}
+            >
+              {REMINDER_OFFSET_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {getReminderOffsetLabel(option.value, "event", !!time)}
+                </option>
+              ))}
+            </select>
           </div>
           {memberOptions.length > 0 && (
             <div>

@@ -3,8 +3,30 @@ import { signOut } from "next-auth/react"
 import { NAV, type Tab } from "../types"
 import { NavIcon } from "./NavIcon"
 import { todayLabel } from "../lib/date"
+import type { Reminder } from "@/types"
+import { NotificationBell } from "./NotificationBell"
 
-export function TopBar({ tab, isMobile = false, appVersion }: { tab: Tab; isMobile?: boolean; appVersion?: string }) {
+export function TopBar({
+  tab,
+  isMobile = false,
+  appVersion,
+  reminders = [],
+  notificationPermission = "default",
+  onEnableDesktopNotifications,
+  onDismissReminder,
+  onSnoozeReminderOneHour,
+  onSnoozeReminderTomorrow,
+}: {
+  tab: Tab
+  isMobile?: boolean
+  appVersion?: string
+  reminders?: Reminder[]
+  notificationPermission?: NotificationPermission | "unsupported"
+  onEnableDesktopNotifications?: () => Promise<void>
+  onDismissReminder?: (id: string) => Promise<boolean>
+  onSnoozeReminderOneHour?: (id: string) => Promise<boolean>
+  onSnoozeReminderTomorrow?: (id: string) => Promise<boolean>
+}) {
   const activeNav = NAV.find((n) => n.id === tab)!
   return (
     <header style={{ padding: "0.875rem 2rem", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.9)", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 20 }}>
@@ -20,6 +42,16 @@ export function TopBar({ tab, isMobile = false, appVersion }: { tab: Tab; isMobi
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        {onEnableDesktopNotifications && onDismissReminder && onSnoozeReminderOneHour && onSnoozeReminderTomorrow && (
+          <NotificationBell
+            reminders={reminders}
+            permission={notificationPermission}
+            onEnableDesktop={onEnableDesktopNotifications}
+            onDismiss={onDismissReminder}
+            onSnoozeOneHour={onSnoozeReminderOneHour}
+            onSnoozeTomorrow={onSnoozeReminderTomorrow}
+          />
+        )}
         <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>{todayLabel()}</span>
         {isMobile && (
           <button

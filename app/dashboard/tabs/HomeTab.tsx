@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect, useMemo } from "react"
+import type { ReminderOffsetMinutes } from "@/lib/reminders"
 import type { Event, Task } from "@/lib/db"
 import type { Tab, ExpenseRow, KidRow, CoParentingSchedule, CoParentingOverride, CalendarMemberOption } from "../types"
 import type { Reminder } from "@/types"
@@ -21,8 +22,8 @@ interface Props {
   reminders: Reminder[]
   memberOptions: CalendarMemberOption[]
   assigneeOptions: string[]
-  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null) => Promise<boolean>
-  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
+  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
   onToggleTask: (id: string, c: boolean) => void
   onDeleteTask: (id: string) => void
   onDeleteEvent: (id: string) => void
@@ -60,13 +61,13 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
   const cpNextExchange = cpSchedule ? findNextExchange(cpSchedule, coparentingOverrides, today) : null
   const cpAssignedKids = kids.filter((k) => (cpSchedule?.kid_ids ?? []).includes(k.id))
 
-  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null) {
-    const ok = await onAddEvent(title, date, time, memberName)
+  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) {
+    const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes)
     if (ok) setShowAddEvent(false)
   }
 
-  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") {
-    const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence)
+  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) {
+    const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence, reminderOffsetMinutes)
     if (ok) setShowAddTask(false)
   }
 

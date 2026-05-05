@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect } from "react"
+import type { ReminderOffsetMinutes } from "@/lib/reminders"
 import type { Task } from "@/lib/db"
 import type { TaskEditData } from "../components/modals/EditTaskModal"
 import { savePillStyle } from "../styles"
@@ -10,7 +11,7 @@ interface Props {
   pending: Task[]
   done: Task[]
   assigneeOptions: string[]
-  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => Promise<boolean>
+  onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
   onEditTask: (id: string, data: TaskEditData) => Promise<boolean>
   onToggleTask: (id: string, completed: boolean) => void
   onDeleteTask: (id: string) => void
@@ -25,8 +26,8 @@ export function TasksTab({ pending, done, assigneeOptions, onAddTask, onEditTask
     if (openSignal) { queueMicrotask(() => setShowAddTask(true)) }
   }, [openSignal])
 
-  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") {
-    const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence)
+  async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) {
+    const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence, reminderOffsetMinutes)
     if (ok) setShowAddTask(false)
   }
 

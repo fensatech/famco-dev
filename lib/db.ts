@@ -1,5 +1,6 @@
 import { getPool } from "./supabase"
 import { BILLING_GRACE_DAYS, BILLING_TRIAL_DAYS, normalizeBillingEmail } from "./billing"
+import { normalizeReminderOffsetMinutes } from "./reminders"
 import type { DeletionFeedbackCategory, Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction, TrialRetentionReason, TrialRetentionRecord } from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
@@ -83,6 +84,8 @@ export async function ensureRuntimeSchema() {
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_name TEXT;
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_offset_minutes INTEGER;
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS reminder_offset_minutes INTEGER;
 
       ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS vendor TEXT;
       ALTER TABLE scanned_events ADD COLUMN IF NOT EXISTS amount NUMERIC(10,2);
@@ -733,6 +736,7 @@ export interface Event {
   end_time: string | null
   description: string | null
   member_name: string | null
+  reminder_offset_minutes: number | null
   source: string
   created_at: string
 }
@@ -761,15 +765,16 @@ export async function createEvent(profileId: string, data: {
   end_time?: string | null
   description?: string | null
   member_name?: string | null
+  reminder_offset_minutes?: number | null
   source?: string
 }): Promise<Event> {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Event>(
-    `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, reminder_offset_minutes, source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
     [householdRootId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null,
-     data.description ?? null, data.member_name ?? null, data.source ?? "manual"]
+     data.description ?? null, data.member_name ?? null, normalizeReminderOffsetMinutes(data.reminder_offset_minutes), data.source ?? "manual"]
   )
   const event = rows[0]
   await syncEventReminder(event)
@@ -820,6 +825,7 @@ export async function updateEvent(id: string, profileId: string, data: {
   end_time?: string | null
   description?: string | null
   member_name?: string | null
+  reminder_offset_minutes?: number | null
 }): Promise<Event | null> {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
@@ -830,6 +836,7 @@ export async function updateEvent(id: string, profileId: string, data: {
     "end_time",
     "description",
     "member_name",
+    "reminder_offset_minutes",
   ] as const
   const keys = allowed.filter((key) => key in data)
 
@@ -842,7 +849,9 @@ export async function updateEvent(id: string, profileId: string, data: {
   }
 
   const setClauses = keys.map((key, index) => `"${key}" = $${index + 3}`)
-  const values = keys.map((key) => data[key] ?? null)
+  const values = keys.map((key) => key === "reminder_offset_minutes"
+    ? normalizeReminderOffsetMinutes(data[key])
+    : data[key] ?? null)
   const { rows } = await pool.query<Event>(
     `UPDATE events SET ${setClauses.join(", ")}
      WHERE id = $1 AND profile_id = $2 RETURNING *`,
@@ -869,6 +878,7 @@ export interface Task {
   notes: string | null
   assignee_name: string | null
   recurrence: "daily" | "weekly" | "monthly" | null
+  reminder_offset_minutes: number | null
   completed: boolean
   completed_at: string | null
   created_at: string
@@ -891,13 +901,14 @@ export async function createTask(profileId: string, data: {
   notes?: string | null
   assignee_name?: string | null
   recurrence?: "daily" | "weekly" | "monthly" | null
+  reminder_offset_minutes?: number | null
 }): Promise<Task> {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Task>(
-    `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [householdRootId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null, data.assignee_name ?? null, data.recurrence ?? null]
+    `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence, reminder_offset_minutes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [householdRootId, data.title, data.due_date ?? null, data.due_time ?? null, data.notes ?? null, data.assignee_name ?? null, data.recurrence ?? null, normalizeReminderOffsetMinutes(data.reminder_offset_minutes)]
   )
   const task = rows[0]
   await syncTaskReminder(task)
@@ -911,13 +922,14 @@ export async function updateTask(id: string, profileId: string, data: {
   notes: string | null
   assignee_name: string | null
   recurrence: "daily" | "weekly" | "monthly" | null
+  reminder_offset_minutes: number | null
 }): Promise<Task | null> {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Task>(
-    `UPDATE tasks SET title = $3, due_date = $4, due_time = $5, notes = $6, assignee_name = $7, recurrence = $8
+    `UPDATE tasks SET title = $3, due_date = $4, due_time = $5, notes = $6, assignee_name = $7, recurrence = $8, reminder_offset_minutes = $9
      WHERE id = $1 AND profile_id = $2 RETURNING *`,
-    [id, householdRootId, data.title, data.due_date, data.due_time, data.notes, data.assignee_name, data.recurrence]
+    [id, householdRootId, data.title, data.due_date, data.due_time, data.notes, data.assignee_name, data.recurrence, normalizeReminderOffsetMinutes(data.reminder_offset_minutes)]
   )
   const task = rows[0] ?? null
   if (task) await syncTaskReminder(task)
@@ -946,9 +958,9 @@ export async function toggleTask(id: string, profileId: string, completed: boole
       if (task.recurrence && task.due_date) {
         const nextDueDate = addRecurringDate(task.due_date, task.recurrence)
         const { rows: spawnedRows } = await client.query<Task>(
-          `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [householdRootId, task.title, nextDueDate, task.due_time, task.notes, task.assignee_name, task.recurrence]
+          `INSERT INTO tasks (profile_id, title, due_date, due_time, notes, assignee_name, recurrence, reminder_offset_minutes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [householdRootId, task.title, nextDueDate, task.due_time, task.notes, task.assignee_name, task.recurrence, task.reminder_offset_minutes]
         )
         spawnedTask = spawnedRows[0] ?? null
         if (spawnedTask) await syncTaskReminder(spawnedTask, client)
@@ -986,18 +998,31 @@ function addRecurringDate(dueDate: string, recurrence: "daily" | "weekly" | "mon
   return next.toISOString().slice(0, 10)
 }
 
-function taskReminderAt(task: Pick<Task, "due_date" | "due_time">): string | null {
-  if (!task.due_date) return null
-  return task.due_time
-    ? `${task.due_date}T${task.due_time}:00`
-    : `${task.due_date}T09:00:00`
+function formatLocalReminderDateTime(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day}T${hours}:${minutes}:00`
 }
 
-function eventReminderAt(event: Pick<Event, "event_date" | "start_time">): string | null {
+function reminderDateTime(dateValue: string, timeValue: string | null, offsetMinutes: number | null | undefined): string {
+  const [year, month, day] = dateValue.split("-").map(Number)
+  const [hours, minutes] = (timeValue ?? "09:00").split(":").map(Number)
+  const reminder = new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0, 0, 0)
+  reminder.setMinutes(reminder.getMinutes() - normalizeReminderOffsetMinutes(offsetMinutes))
+  return formatLocalReminderDateTime(reminder)
+}
+
+function taskReminderAt(task: Pick<Task, "due_date" | "due_time" | "reminder_offset_minutes">): string | null {
+  if (!task.due_date) return null
+  return reminderDateTime(task.due_date, task.due_time, task.reminder_offset_minutes)
+}
+
+function eventReminderAt(event: Pick<Event, "event_date" | "start_time" | "reminder_offset_minutes">): string | null {
   if (!event.event_date) return null
-  return event.start_time
-    ? `${event.event_date}T${event.start_time}:00`
-    : `${event.event_date}T09:00:00`
+  return reminderDateTime(event.event_date, event.start_time, event.reminder_offset_minutes)
 }
 
 type Queryable = {

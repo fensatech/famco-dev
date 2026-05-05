@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import type { ReminderOffsetMinutes } from "@/lib/reminders"
 import type { Event, Task } from "@/lib/db"
 import type { Reminder } from "@/types"
 import { todayStr } from "../lib/date"
@@ -22,12 +23,12 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
     }
   }
 
-  async function addEvent(title: string, date: string, time: string | null, memberName?: string | null): Promise<boolean> {
+  async function addEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes): Promise<boolean> {
     setSaving(true)
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null }),
+      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null, reminder_offset_minutes: reminderOffsetMinutes ?? 0 }),
     })
     if (res.ok) {
       const { event } = await res.json()
@@ -41,7 +42,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
     return res.ok
   }
 
-  async function addTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly"): Promise<boolean> {
+  async function addTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes): Promise<boolean> {
     setSaving(true)
     const res = await fetch("/api/tasks", {
       method: "POST",
@@ -53,6 +54,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
         notes: notes || null,
         assignee_name: assigneeName || null,
         recurrence: recurrence || null,
+        reminder_offset_minutes: reminderOffsetMinutes ?? 0,
       }),
     })
     if (res.ok) {
@@ -64,7 +66,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
     return res.ok
   }
 
-  async function editTask(id: string, data: { title: string; due_date: string | null; due_time: string | null; notes: string | null; assignee_name: string | null; recurrence: "daily" | "weekly" | "monthly" | null }): Promise<boolean> {
+  async function editTask(id: string, data: { title: string; due_date: string | null; due_time: string | null; notes: string | null; assignee_name: string | null; recurrence: "daily" | "weekly" | "monthly" | null; reminder_offset_minutes: ReminderOffsetMinutes | null }): Promise<boolean> {
     const res = await fetch(`/api/tasks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

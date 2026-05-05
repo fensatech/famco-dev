@@ -24,6 +24,7 @@ export async function PATCH(
     notes: body.notes ?? null,
     assignee_name: body.assignee_name ?? null,
     recurrence: body.recurrence ?? null,
+    reminder_offset_minutes: body.reminder_offset_minutes ?? 0,
   })
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 })
   return NextResponse.json({ task })

@@ -36,6 +36,10 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   const [householdMembers] = useState<HouseholdMember[]>(initialHouseholdMembers)
   const [insightActions, setInsightActions] = useState<ScannedEventAction[]>(initialInsightActions)
   const [reminders, setReminders] = useState<Reminder[]>(initialReminders)
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported"
+    return Notification.permission
+  })
   const [gcalEvents, setGcalEvents] = useState<GCalEvent[]>([])
   const [gcalLoaded, setGcalLoaded] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -46,11 +50,98 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   const [coparentingLoaded, setCoparentingLoaded] = useState(false)
 
   useEffect(() => {
+    function resetDashboardState() {
+      setTab("home")
+      setAddEventSignal(0)
+      setAddTaskSignal(0)
+      try {
+        sessionStorage.removeItem("famco_scan_done")
+      } catch {}
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }))
+    }
+
+    function handlePageShow(event: PageTransitionEvent) {
+      const navigationEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined
+      if (event.persisted || navigationEntry?.type === "back_forward") {
+        resetDashboardState()
+      }
+    }
+
+    function handlePageHide() {
+      try {
+        sessionStorage.removeItem("famco_scan_done")
+      } catch {}
+    }
+
+    window.addEventListener("pageshow", handlePageShow)
+    window.addEventListener("pagehide", handlePageHide)
+    return () => {
+      window.removeEventListener("pageshow", handlePageShow)
+      window.removeEventListener("pagehide", handlePageHide)
+    }
+  }, [])
+
+  useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
     check()
     window.addEventListener("resize", check)
     return () => window.removeEventListener("resize", check)
   }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function refreshReminders() {
+      try {
+        const res = await fetch("/api/reminders")
+        if (!res.ok) return
+        const { reminders: nextReminders } = await res.json()
+        if (!mounted || !Array.isArray(nextReminders)) return
+        setReminders(nextReminders)
+      } catch {}
+    }
+
+    void refreshReminders()
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshReminders()
+      }
+    }, 60000)
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshReminders()
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    window.addEventListener("focus", handleVisibilityChange)
+
+    return () => {
+      mounted = false
+      window.clearInterval(interval)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      window.removeEventListener("focus", handleVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (notificationPermission !== "granted" || typeof window === "undefined") return
+    const now = Date.now()
+    for (const reminder of reminders) {
+      const remindAt = new Date(reminder.remind_at).getTime()
+      if (Number.isNaN(remindAt) || remindAt > now) continue
+      const deliveredKey = `famco_notification_shown_${reminder.id}`
+      if (sessionStorage.getItem(deliveredKey)) continue
+      try {
+        new Notification(reminder.title, {
+          body: reminder.note ?? "A Famco reminder is ready for you.",
+          tag: reminder.id,
+        })
+        sessionStorage.setItem(deliveredKey, "1")
+      } catch {}
+    }
+  }, [notificationPermission, reminders])
 
   useEffect(() => {
     fetch("/api/coparenting")
@@ -217,6 +308,28 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
     return true
   }
 
+  async function enableDesktopNotifications() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported")
+      return
+    }
+    const permission = await Notification.requestPermission()
+    setNotificationPermission(permission)
+  }
+
+  async function snoozeReminderOneHourAction(id: string) {
+    const next = new Date()
+    next.setHours(next.getHours() + 1, 0, 0, 0)
+    return snoozeReminderAction(id, next.toISOString())
+  }
+
+  async function snoozeReminderTomorrowAction(id: string) {
+    const next = new Date()
+    next.setDate(next.getDate() + 1)
+    next.setHours(9, 0, 0, 0)
+    return snoozeReminderAction(id, next.toISOString())
+  }
+
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg)" }}>
 
@@ -235,7 +348,17 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
 
       {/* Main */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <TopBar tab={tab} isMobile={isMobile} appVersion={appVersion} />
+        <TopBar
+          tab={tab}
+          isMobile={isMobile}
+          appVersion={appVersion}
+          reminders={activeReminders}
+          notificationPermission={notificationPermission}
+          onEnableDesktopNotifications={enableDesktopNotifications}
+          onDismissReminder={dismissReminderAction}
+          onSnoozeReminderOneHour={snoozeReminderOneHourAction}
+          onSnoozeReminderTomorrow={snoozeReminderTomorrowAction}
+        />
 
         <main style={{ flex: 1, padding: isMobile ? "1.25rem 1rem" : "2rem 2.5rem", paddingBottom: isMobile ? "5.5rem" : "5rem", overflowY: "auto" }}>
           {showBillingBanner && tab !== "billing" && (

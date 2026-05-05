@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS events (
   start_time  TIME,
   end_time    TIME,
   description TEXT,
+  reminder_offset_minutes INTEGER,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -138,6 +139,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   notes        TEXT,
   assignee_name TEXT,
   recurrence   TEXT CHECK (recurrence IN ('daily','weekly','monthly') OR recurrence IS NULL),
+  reminder_offset_minutes INTEGER,
   completed    BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()

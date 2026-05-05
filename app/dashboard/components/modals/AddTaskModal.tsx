@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { DEFAULT_REMINDER_OFFSET_MINUTES, getReminderOffsetLabel, REMINDER_OFFSET_OPTIONS, type ReminderOffsetMinutes } from "@/lib/reminders"
 import { inputSt, fieldLabelStyle } from "../../styles"
 
 function currentDateValue() {
@@ -19,7 +20,7 @@ function currentTimeValue() {
 
 interface Props {
   assigneeOptions?: string[]
-  onSave: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly") => void
+  onSave: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) => void
   onCancel: () => void
   saving: boolean
 }
@@ -31,11 +32,12 @@ export function AddTaskModal({ assigneeOptions = [], onSave, onCancel, saving }:
   const [notes, setNotes] = useState("")
   const [assigneeName, setAssigneeName] = useState("")
   const [recurrence, setRecurrence] = useState<"daily" | "weekly" | "monthly" | "">("")
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<ReminderOffsetMinutes>(DEFAULT_REMINDER_OFFSET_MINUTES)
   const [expanded, setExpanded] = useState(false)
 
   function handleSave() {
     if (!title.trim()) return
-    onSave(title.trim(), dueDate || undefined, dueTime || undefined, notes.trim() || undefined, assigneeName || undefined, recurrence || undefined)
+    onSave(title.trim(), dueDate || undefined, dueTime || undefined, notes.trim() || undefined, assigneeName || undefined, recurrence || undefined, reminderOffsetMinutes)
   }
 
   return (
@@ -98,6 +100,20 @@ export function AddTaskModal({ assigneeOptions = [], onSave, onCancel, saving }:
                     <option value="monthly">Monthly</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label style={fieldLabelStyle}>Reminder</label>
+                <select
+                  value={String(reminderOffsetMinutes)}
+                  onChange={(e) => setReminderOffsetMinutes(Number(e.target.value) as ReminderOffsetMinutes)}
+                  style={{ ...inputSt, marginTop: "0.3rem" }}
+                >
+                  {REMINDER_OFFSET_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {getReminderOffsetLabel(option.value, "task", !!dueTime)}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={fieldLabelStyle}>Notes</label>

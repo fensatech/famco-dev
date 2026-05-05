@@ -1,6 +1,7 @@
 "use client"
 import { useState, useRef, useEffect } from "react"
 import { signOut } from "next-auth/react"
+import type { ReminderOffsetMinutes } from "@/lib/reminders"
 import type { Event, Task } from "@/lib/db"
 import type { CalendarMemberOption, GCalEvent, ScannedEventRow } from "../types"
 import { todayStr } from "../lib/date"
@@ -21,7 +22,7 @@ interface Props {
   tasks: Task[]
   onDeleteEvent: (id: string) => void
   onUpdateEvent: (id: string, data: Partial<Event>) => void
-  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null) => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
   saving: boolean
   provider: string
   memberOptions: CalendarMemberOption[]
@@ -269,8 +270,8 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
     return dateTasks.filter((t) => (t.assignee_name ?? "").toLowerCase() === memberFilter.toLowerCase())
   }
 
-  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null) {
-    const ok = await onAddEvent(title, date, time, memberName)
+  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) {
+    const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes)
     if (ok) setShowAddEvent(false)
   }
 
