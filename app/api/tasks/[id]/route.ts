@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
-import { toggleTask, deleteTask, updateTask } from "@/lib/db"
+import { deleteTask, getHouseholdRole, toggleTask, updateTask } from "@/lib/db"
+import { canManageTasks } from "@/lib/permissions"
 
 export async function PATCH(
   req: NextRequest,
@@ -8,6 +9,10 @@ export async function PATCH(
 ) {
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const role = await getHouseholdRole(session.profileId)
+  if (!canManageTasks(role)) {
+    return NextResponse.json({ error: "You have read-only access for household tasks." }, { status: 403 })
+  }
   const { id } = await params
   const body = await req.json()
 
@@ -36,6 +41,10 @@ export async function DELETE(
 ) {
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const role = await getHouseholdRole(session.profileId)
+  if (!canManageTasks(role)) {
+    return NextResponse.json({ error: "You have read-only access for household tasks." }, { status: 403 })
+  }
   const { id } = await params
   await deleteTask(id, session.profileId)
   return NextResponse.json({ ok: true })

@@ -188,8 +188,72 @@ CREATE TABLE IF NOT EXISTS scanned_event_actions (
   assigned_to TEXT,
   last_action TEXT
     CHECK (last_action IN ('calendar', 'task', 'reminder', 'handled') OR last_action IS NULL),
+  corrected_member_name TEXT,
+  corrected_member_type TEXT
+    CHECK (corrected_member_type IN ('adult', 'child', 'pet', 'family') OR corrected_member_type IS NULL),
+  corrected_event_type TEXT
+    CHECK (corrected_event_type IN ('calendar_invite','appointment','school_event','medical','field_trip','no_school','special_day','activity','recital','subscription','invoice','bill','other') OR corrected_event_type IS NULL),
+  relevance TEXT NOT NULL DEFAULT 'relevant'
+    CHECK (relevance IN ('relevant', 'not_relevant', 'needs_review')),
   handled_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (profile_id, scanned_event_id)
+);
+
+CREATE TABLE IF NOT EXISTS household_notification_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE UNIQUE,
+  browser_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  quiet_hours_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  quiet_hours_start TIME,
+  quiet_hours_end TIME,
+  default_event_offset_minutes INTEGER NOT NULL DEFAULT 0,
+  default_task_offset_minutes INTEGER NOT NULL DEFAULT 0,
+  default_school_offset_minutes INTEGER NOT NULL DEFAULT 1440,
+  default_bill_offset_minutes INTEGER NOT NULL DEFAULT 1440,
+  default_coparenting_offset_minutes INTEGER NOT NULL DEFAULT 120,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS coparenting_schedules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  schedule_type TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  exchange_time TIME,
+  exchange_location TEXT,
+  parent_a_name TEXT NOT NULL DEFAULT 'Parent A',
+  parent_b_name TEXT NOT NULL DEFAULT 'Parent B',
+  kid_ids JSONB NOT NULL DEFAULT '[]',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS coparenting_overrides (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  schedule_id UUID NOT NULL REFERENCES coparenting_schedules(id) ON DELETE CASCADE,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  override_date DATE NOT NULL,
+  assigned_to TEXT NOT NULL CHECK (assigned_to IN ('a', 'b')),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (schedule_id, override_date)
+);
+
+CREATE TABLE IF NOT EXISTS coparenting_swap_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  schedule_id UUID NOT NULL REFERENCES coparenting_schedules(id) ON DELETE CASCADE,
+  requested_date DATE NOT NULL,
+  requested_by TEXT NOT NULL CHECK (requested_by IN ('a', 'b')),
+  requested_to TEXT NOT NULL CHECK (requested_to IN ('a', 'b')),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'declined')),
+  note TEXT,
+  decision_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

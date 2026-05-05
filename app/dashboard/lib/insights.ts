@@ -1,3 +1,4 @@
+import type { ScannedEventAction } from "@/types"
 import type { ScannedEventRow } from "../types"
 import { getScannedEventMemberName, getScannedEventMemberType } from "./scanned-event-members"
 
@@ -59,11 +60,24 @@ function uniqueReasons(reasons: string[]): string[] {
   return result
 }
 
-export function getInsightTrustProfile(event: ScannedEventRow): InsightTrustProfile {
-  const memberName = getScannedEventMemberName(event)
-  const memberType = getScannedEventMemberType(event)
+export function getInsightTrustProfile(event: ScannedEventRow, action?: ScannedEventAction): InsightTrustProfile {
+  const memberName = getScannedEventMemberName(event, action)
+  const memberType = getScannedEventMemberType(event, action)
   const reasons: string[] = []
   let score = 0
+
+  if (action?.relevance === "needs_review") {
+    reasons.push("A household member flagged this item for review.")
+    score -= 2
+  } else if (action?.relevance === "not_relevant") {
+    reasons.push("Marked not relevant by the household.")
+    score -= 3
+  }
+
+  if (action?.corrected_member_name || action?.corrected_member_type || action?.corrected_event_type) {
+    reasons.push("This match was refined using household feedback.")
+    score += 2
+  }
 
   if (event.ai_processed) {
     reasons.push("Processed with AI using your Manage Family household context.")
@@ -148,9 +162,23 @@ function getDateDiffDays(date: string, today: string): number {
   return Math.round((new Date(date).getTime() - new Date(today).getTime()) / 86400000)
 }
 
-export function getInsightPriorityProfile(event: ScannedEventRow, today: string): InsightPriorityProfile {
+export function getInsightPriorityProfile(event: ScannedEventRow, today: string, action?: ScannedEventAction): InsightPriorityProfile {
   const reasons: string[] = []
   let score = 0
+
+  if (action?.relevance === "not_relevant") {
+    return {
+      score: -1,
+      label: "Muted",
+      color: "#64748b",
+      reasons: ["Hidden from the main household queue after being marked not relevant."],
+    }
+  }
+
+  if (action?.relevance === "needs_review") {
+    score += 2
+    reasons.push("A household member marked this item for review.")
+  }
 
   if (event.urgency === "high") {
     score += 4
@@ -205,7 +233,7 @@ export function getInsightPriorityProfile(event: ScannedEventRow, today: string)
     reasons.push("Famco sees this as schedule-worthy.")
   }
 
-  if (!event.related_member_name && !event.kid_name) {
+  if (!getScannedEventMemberName(event, action)) {
     score += 1
     reasons.push("Member match is weak, so it may need a quick review.")
   }
@@ -247,10 +275,14 @@ export function getInsightPriorityProfile(event: ScannedEventRow, today: string)
   }
 }
 
-export function sortEventsByPriority(events: ScannedEventRow[], today: string): ScannedEventRow[] {
+export function sortEventsByPriority(
+  events: ScannedEventRow[],
+  today: string,
+  actionsById?: Map<string, ScannedEventAction>,
+): ScannedEventRow[] {
   return [...events].sort((left, right) => {
-    const rightPriority = getInsightPriorityProfile(right, today)
-    const leftPriority = getInsightPriorityProfile(left, today)
+    const rightPriority = getInsightPriorityProfile(right, today, actionsById?.get(right.id))
+    const leftPriority = getInsightPriorityProfile(left, today, actionsById?.get(left.id))
     if (rightPriority.score !== leftPriority.score) return rightPriority.score - leftPriority.score
 
     const leftDate = String(left.event_date ?? "")

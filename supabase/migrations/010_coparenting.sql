@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS coparenting_schedules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   schedule_type TEXT NOT NULL,
   start_date DATE NOT NULL,
   exchange_time TIME,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS coparenting_schedules (
 CREATE TABLE IF NOT EXISTS coparenting_overrides (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   schedule_id UUID NOT NULL REFERENCES coparenting_schedules(id) ON DELETE CASCADE,
-  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   override_date DATE NOT NULL,
   assigned_to TEXT NOT NULL CHECK (assigned_to IN ('a', 'b')),
   note TEXT,

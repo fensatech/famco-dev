@@ -3,7 +3,7 @@ import { signOut } from "next-auth/react"
 import { NAV, type Tab } from "../types"
 import { NavIcon } from "./NavIcon"
 import { todayLabel } from "../lib/date"
-import type { Reminder } from "@/types"
+import type { HouseholdNotificationPreferences, Reminder } from "@/types"
 import { NotificationBell } from "./NotificationBell"
 
 export function TopBar({
@@ -11,6 +11,7 @@ export function TopBar({
   isMobile = false,
   appVersion,
   reminders = [],
+  notificationPreferences,
   notificationPermission = "default",
   onEnableDesktopNotifications,
   onDismissReminder,
@@ -21,6 +22,7 @@ export function TopBar({
   isMobile?: boolean
   appVersion?: string
   reminders?: Reminder[]
+  notificationPreferences?: HouseholdNotificationPreferences
   notificationPermission?: NotificationPermission | "unsupported"
   onEnableDesktopNotifications?: () => Promise<void>
   onDismissReminder?: (id: string) => Promise<boolean>
@@ -45,6 +47,7 @@ export function TopBar({
         {onEnableDesktopNotifications && onDismissReminder && onSnoozeReminderOneHour && onSnoozeReminderTomorrow && (
           <NotificationBell
             reminders={reminders}
+            preferences={notificationPreferences}
             permission={notificationPermission}
             onEnableDesktop={onEnableDesktopNotifications}
             onDismiss={onDismissReminder}

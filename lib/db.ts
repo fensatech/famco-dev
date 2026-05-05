@@ -1,7 +1,21 @@
 import { getPool } from "./supabase"
-import { BILLING_GRACE_DAYS, BILLING_TRIAL_DAYS, normalizeBillingEmail } from "./billing"
+import { BILLING_GRACE_DAYS, BILLING_TRIAL_DAYS, getTrialWindow, normalizeBillingEmail } from "./billing"
 import { normalizeReminderOffsetMinutes } from "./reminders"
-import type { DeletionFeedbackCategory, Profile, Kid, FamilyDocument, FamilyFact, HouseholdMember, RawFact, ScannedEventAction, TrialRetentionReason, TrialRetentionRecord } from "@/types"
+import type {
+  CoParentingSwapRequest,
+  DeletionFeedbackCategory,
+  FamilyDocument,
+  FamilyFact,
+  HouseholdMember,
+  HouseholdNotificationPreferences,
+  HouseholdRole,
+  Kid,
+  Profile,
+  RawFact,
+  ScannedEventAction,
+  TrialRetentionReason,
+  TrialRetentionRecord,
+} from "@/types"
 import type { FamilyInvite, Reminder } from "@/types"
 import { randomUUID } from "node:crypto"
 
@@ -139,6 +153,22 @@ export async function ensureRuntimeSchema() {
       CREATE INDEX IF NOT EXISTS reminders_profile_idx
         ON reminders (profile_id, status, remind_at ASC);
 
+      CREATE TABLE IF NOT EXISTS household_notification_preferences (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE UNIQUE,
+        browser_enabled BOOLEAN NOT NULL DEFAULT true,
+        quiet_hours_enabled BOOLEAN NOT NULL DEFAULT false,
+        quiet_hours_start TIME,
+        quiet_hours_end TIME,
+        default_event_offset_minutes INTEGER NOT NULL DEFAULT 0,
+        default_task_offset_minutes INTEGER NOT NULL DEFAULT 0,
+        default_school_offset_minutes INTEGER NOT NULL DEFAULT 1440,
+        default_bill_offset_minutes INTEGER NOT NULL DEFAULT 1440,
+        default_coparenting_offset_minutes INTEGER NOT NULL DEFAULT 120,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS scanned_event_actions (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -146,6 +176,10 @@ export async function ensureRuntimeSchema() {
         status TEXT NOT NULL DEFAULT 'new',
         assigned_to TEXT,
         last_action TEXT,
+        corrected_member_name TEXT,
+        corrected_member_type TEXT,
+        corrected_event_type TEXT,
+        relevance TEXT NOT NULL DEFAULT 'relevant',
         handled_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -154,6 +188,13 @@ export async function ensureRuntimeSchema() {
 
       CREATE INDEX IF NOT EXISTS scanned_event_actions_profile_idx
         ON scanned_event_actions (profile_id, status, updated_at DESC);
+
+      ALTER TABLE scanned_event_actions DROP CONSTRAINT IF EXISTS scanned_event_actions_corrected_member_type_check;
+      ALTER TABLE scanned_event_actions ADD CONSTRAINT scanned_event_actions_corrected_member_type_check
+        CHECK (corrected_member_type IN ('adult', 'child', 'pet', 'family') OR corrected_member_type IS NULL);
+      ALTER TABLE scanned_event_actions DROP CONSTRAINT IF EXISTS scanned_event_actions_relevance_check;
+      ALTER TABLE scanned_event_actions ADD CONSTRAINT scanned_event_actions_relevance_check
+        CHECK (relevance IN ('relevant', 'not_relevant', 'needs_review'));
 
       CREATE TABLE IF NOT EXISTS coparenting_schedules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -180,6 +221,23 @@ export async function ensureRuntimeSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         UNIQUE (schedule_id, override_date)
       );
+
+      CREATE TABLE IF NOT EXISTS coparenting_swap_requests (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        schedule_id UUID NOT NULL REFERENCES coparenting_schedules(id) ON DELETE CASCADE,
+        requested_date DATE NOT NULL,
+        requested_by TEXT NOT NULL CHECK (requested_by IN ('a', 'b')),
+        requested_to TEXT NOT NULL CHECK (requested_to IN ('a', 'b')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'declined')),
+        note TEXT,
+        decision_note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS coparenting_swap_requests_profile_idx
+        ON coparenting_swap_requests (profile_id, status, requested_date DESC);
     `)
 
     schemaEnsured = true
@@ -244,6 +302,68 @@ export async function getPrimaryHouseholdProfile(profileId: string): Promise<Pro
   const householdRootId = profile.household_root_id ?? profile.id
   if (householdRootId === profile.id) return profile
   return getProfile(householdRootId)
+}
+
+export async function getHouseholdRole(profileId: string): Promise<HouseholdRole> {
+  const pool = getPool()
+  const profile = await getProfile(profileId)
+  if (!profile) return "member"
+  const householdRootId = profile.household_root_id ?? profile.id
+  if (profileId === householdRootId) return "owner"
+
+  const { rows } = await pool.query<{ role: HouseholdRole | null }>(
+    `SELECT role
+     FROM family_invites
+     WHERE profile_id = $1
+       AND accepted_by_profile_id = $2
+       AND status = 'accepted'
+     ORDER BY accepted_at DESC NULLS LAST, created_at DESC
+     LIMIT 1`,
+    [householdRootId, profileId],
+  )
+
+  return rows[0]?.role ?? "member"
+}
+
+function mapNotificationPreferences(row: HouseholdNotificationPreferences & {
+  created_at: string | Date
+  updated_at: string | Date
+}): HouseholdNotificationPreferences {
+  return {
+    ...row,
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
+function mapScannedEventAction(
+  row: ScannedEventAction & {
+    handled_at: string | Date | null
+    created_at: string | Date
+    updated_at: string | Date
+  },
+): ScannedEventAction {
+  return {
+    ...row,
+    handled_at: row.handled_at ? (isDateValue(row.handled_at) ? row.handled_at.toISOString() : String(row.handled_at)) : null,
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
+}
+
+function mapCoParentingSwapRequest(
+  row: CoParentingSwapRequest & {
+    requested_date: string | Date
+    created_at: string | Date
+    updated_at: string | Date
+  },
+): CoParentingSwapRequest {
+  return {
+    ...row,
+    requested_date: isDateValue(row.requested_date) ? row.requested_date.toISOString().slice(0, 10) : String(row.requested_date).slice(0, 10),
+    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
+  }
 }
 
 function mapTrialRetentionRecord(row: TrialRetentionRecord & {
@@ -352,6 +472,99 @@ export async function markTrialRetentionDeleted(
      WHERE provider_profile_id = ANY($1::text[])`,
     [profileIds, reason, feedbackCategory ?? null],
   )
+}
+
+export async function getNotificationPreferences(profileId: string): Promise<HouseholdNotificationPreferences> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<HouseholdNotificationPreferences & {
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `INSERT INTO household_notification_preferences (profile_id)
+     VALUES ($1)
+     ON CONFLICT (profile_id) DO NOTHING
+     RETURNING *`,
+    [householdRootId],
+  )
+
+  const row =
+    rows[0] ??
+    (
+      await pool.query<HouseholdNotificationPreferences & {
+        created_at: string | Date
+        updated_at: string | Date
+      }>(
+        `SELECT * FROM household_notification_preferences WHERE profile_id = $1`,
+        [householdRootId],
+      )
+    ).rows[0]
+
+  return mapNotificationPreferences(row)
+}
+
+export async function upsertNotificationPreferences(
+  profileId: string,
+  updates: Partial<Pick<
+    HouseholdNotificationPreferences,
+    | "browser_enabled"
+    | "quiet_hours_enabled"
+    | "quiet_hours_start"
+    | "quiet_hours_end"
+    | "default_event_offset_minutes"
+    | "default_task_offset_minutes"
+    | "default_school_offset_minutes"
+    | "default_bill_offset_minutes"
+    | "default_coparenting_offset_minutes"
+  >>,
+): Promise<HouseholdNotificationPreferences> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const current = await getNotificationPreferences(profileId)
+  const next = {
+    browser_enabled: updates.browser_enabled ?? current.browser_enabled,
+    quiet_hours_enabled: updates.quiet_hours_enabled ?? current.quiet_hours_enabled,
+    quiet_hours_start: updates.quiet_hours_start ?? current.quiet_hours_start,
+    quiet_hours_end: updates.quiet_hours_end ?? current.quiet_hours_end,
+    default_event_offset_minutes: normalizeReminderOffsetMinutes(updates.default_event_offset_minutes ?? current.default_event_offset_minutes),
+    default_task_offset_minutes: normalizeReminderOffsetMinutes(updates.default_task_offset_minutes ?? current.default_task_offset_minutes),
+    default_school_offset_minutes: normalizeReminderOffsetMinutes(updates.default_school_offset_minutes ?? current.default_school_offset_minutes),
+    default_bill_offset_minutes: normalizeReminderOffsetMinutes(updates.default_bill_offset_minutes ?? current.default_bill_offset_minutes),
+    default_coparenting_offset_minutes: normalizeReminderOffsetMinutes(updates.default_coparenting_offset_minutes ?? current.default_coparenting_offset_minutes),
+  }
+
+  const { rows } = await pool.query<HouseholdNotificationPreferences & {
+    created_at: string | Date
+    updated_at: string | Date
+  }>(
+    `UPDATE household_notification_preferences
+     SET browser_enabled = $2,
+         quiet_hours_enabled = $3,
+         quiet_hours_start = $4,
+         quiet_hours_end = $5,
+         default_event_offset_minutes = $6,
+         default_task_offset_minutes = $7,
+         default_school_offset_minutes = $8,
+         default_bill_offset_minutes = $9,
+         default_coparenting_offset_minutes = $10,
+         updated_at = NOW()
+     WHERE profile_id = $1
+     RETURNING *`,
+    [
+      householdRootId,
+      next.browser_enabled,
+      next.quiet_hours_enabled,
+      next.quiet_hours_start,
+      next.quiet_hours_end,
+      next.default_event_offset_minutes,
+      next.default_task_offset_minutes,
+      next.default_school_offset_minutes,
+      next.default_bill_offset_minutes,
+      next.default_coparenting_offset_minutes,
+    ],
+  )
+
+  return mapNotificationPreferences(rows[0])
 }
 
 export async function updateProfile(id: string, updates: Partial<Profile>) {
@@ -1184,12 +1397,7 @@ export async function getScannedEventActions(profileId: string): Promise<Scanned
      ORDER BY updated_at DESC`,
     [householdRootId],
   )
-  return rows.map((row) => ({
-    ...row,
-    handled_at: row.handled_at ? (isDateValue(row.handled_at) ? row.handled_at.toISOString() : String(row.handled_at)) : null,
-    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
-    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
-  }))
+  return rows.map(mapScannedEventAction)
 }
 
 export async function upsertScannedEventAction(
@@ -1199,6 +1407,10 @@ export async function upsertScannedEventAction(
     status?: ScannedEventAction["status"]
     assigned_to?: string | null
     last_action?: ScannedEventAction["last_action"]
+    corrected_member_name?: string | null
+    corrected_member_type?: ScannedEventAction["corrected_member_type"]
+    corrected_event_type?: ScannedEventAction["corrected_event_type"]
+    relevance?: ScannedEventAction["relevance"]
   },
 ): Promise<ScannedEventAction> {
   const pool = getPool()
@@ -1206,6 +1418,10 @@ export async function upsertScannedEventAction(
   const status = data.status ?? "new"
   const assignedTo = data.assigned_to ?? null
   const lastAction = data.last_action ?? null
+  const correctedMemberName = data.corrected_member_name ?? null
+  const correctedMemberType = data.corrected_member_type ?? null
+  const correctedEventType = data.corrected_event_type ?? null
+  const relevance = data.relevance ?? "relevant"
   const handledAt = status === "handled" ? new Date().toISOString() : null
   const { rows } = await pool.query<
     ScannedEventAction & {
@@ -1214,27 +1430,39 @@ export async function upsertScannedEventAction(
       updated_at: string | Date
     }
   >(
-    `INSERT INTO scanned_event_actions (profile_id, scanned_event_id, status, assigned_to, last_action, handled_at)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO scanned_event_actions (
+       profile_id, scanned_event_id, status, assigned_to, last_action, corrected_member_name,
+       corrected_member_type, corrected_event_type, relevance, handled_at
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (profile_id, scanned_event_id) DO UPDATE SET
        status = COALESCE($3, scanned_event_actions.status),
        assigned_to = $4,
        last_action = COALESCE($5, scanned_event_actions.last_action),
+       corrected_member_name = COALESCE($6, scanned_event_actions.corrected_member_name),
+       corrected_member_type = COALESCE($7, scanned_event_actions.corrected_member_type),
+       corrected_event_type = COALESCE($8, scanned_event_actions.corrected_event_type),
+       relevance = COALESCE($9, scanned_event_actions.relevance),
        handled_at = CASE
-         WHEN COALESCE($3, scanned_event_actions.status) = 'handled' THEN COALESCE($6, scanned_event_actions.handled_at, NOW())
+         WHEN COALESCE($3, scanned_event_actions.status) = 'handled' THEN COALESCE($10, scanned_event_actions.handled_at, NOW())
          ELSE NULL
        END,
        updated_at = NOW()
      RETURNING *`,
-    [householdRootId, scannedEventId, data.status ?? null, assignedTo, lastAction, handledAt],
+    [
+      householdRootId,
+      scannedEventId,
+      data.status ?? null,
+      assignedTo,
+      lastAction,
+      correctedMemberName,
+      correctedMemberType,
+      correctedEventType,
+      relevance,
+      handledAt,
+    ],
   )
-  const row = rows[0]
-  return {
-    ...row,
-    handled_at: row.handled_at ? (isDateValue(row.handled_at) ? row.handled_at.toISOString() : String(row.handled_at)) : null,
-    created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
-    updated_at: isDateValue(row.updated_at) ? row.updated_at.toISOString() : String(row.updated_at),
-  }
+  return mapScannedEventAction(rows[0])
 }
 
 export async function getFamilyInvites(profileId: string): Promise<FamilyInvite[]> {
@@ -1453,6 +1681,82 @@ export async function deleteExpense(id: string, profileId: string) {
   await pool.query(`DELETE FROM expenses WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
 }
 
+export interface AdminHouseholdOverview {
+  household_root_id: string
+  primary_email: string
+  primary_name: string
+  family_type: string | null
+  member_count: number
+  pending_invites: number
+  kid_count: number
+  pet_count: number
+  document_count: number
+  scanned_event_count: number
+  trial_started_at: string
+  billing_status: "trial" | "grace" | "expired"
+  created_at: string
+}
+
+export async function getAdminHouseholdOverview(): Promise<AdminHouseholdOverview[]> {
+  const pool = getPool()
+  const { rows } = await pool.query<{
+    household_root_id: string
+    primary_email: string
+    primary_name: string
+    family_type: string | null
+    member_count: string | number
+    pending_invites: string | number
+    kid_count: string | number
+    pet_count: string | number
+    document_count: string | number
+    scanned_event_count: string | number
+    trial_started_at: string | Date
+    created_at: string | Date
+  }>(
+    `SELECT
+        p.id AS household_root_id,
+        p.email AS primary_email,
+        TRIM(CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, ''))) AS primary_name,
+        p.family_type,
+        (
+          SELECT COUNT(*) FROM profiles members
+          WHERE COALESCE(members.household_root_id, members.id) = p.id
+        ) AS member_count,
+        (
+          SELECT COUNT(*) FROM family_invites fi
+          WHERE fi.profile_id = p.id AND fi.status = 'pending'
+        ) AS pending_invites,
+        (SELECT COUNT(*) FROM kids k WHERE k.profile_id = p.id) AS kid_count,
+        (SELECT COUNT(*) FROM pets pet WHERE pet.profile_id = p.id) AS pet_count,
+        (SELECT COUNT(*) FROM family_documents d WHERE d.profile_id = p.id) AS document_count,
+        (SELECT COUNT(*) FROM scanned_events se WHERE se.profile_id = p.id) AS scanned_event_count,
+        COALESCE(p.billing_trial_started_at, p.created_at) AS trial_started_at,
+        p.created_at
+      FROM profiles p
+      WHERE COALESCE(p.household_root_id, p.id) = p.id
+      ORDER BY p.created_at DESC`,
+  )
+
+  return rows.map((row) => {
+    const trialStartedAt = isDateValue(row.trial_started_at) ? row.trial_started_at.toISOString() : String(row.trial_started_at)
+    return {
+      household_root_id: row.household_root_id,
+      primary_email: row.primary_email,
+      primary_name: row.primary_name.trim() || row.primary_email,
+      family_type: row.family_type,
+      member_count: Number(row.member_count),
+      pending_invites: Number(row.pending_invites),
+      kid_count: Number(row.kid_count),
+      pet_count: Number(row.pet_count),
+      document_count: Number(row.document_count),
+      scanned_event_count: Number(row.scanned_event_count),
+      trial_started_at: trialStartedAt,
+      billing_status: getTrialWindow(trialStartedAt).status,
+      created_at: isDateValue(row.created_at) ? row.created_at.toISOString() : String(row.created_at),
+    }
+  })
+}
+
 // ── Family Facts ──────────────────────────────────────────────────────────────
 
 export async function getFamilyFacts(profileId: string): Promise<FamilyFact[]> {
@@ -1640,4 +1944,110 @@ export async function deleteCoParentingOverride(id: string, profileId: string): 
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
   await pool.query(`DELETE FROM coparenting_overrides WHERE id = $1 AND profile_id = $2`, [id, householdRootId])
+}
+
+export async function getCoParentingSwapRequests(profileId: string, scheduleId: string): Promise<CoParentingSwapRequest[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<
+    CoParentingSwapRequest & {
+      requested_date: string | Date
+      created_at: string | Date
+      updated_at: string | Date
+    }
+  >(
+    `SELECT * FROM coparenting_swap_requests
+     WHERE profile_id = $1
+       AND schedule_id = $2
+     ORDER BY requested_date DESC, created_at DESC`,
+    [householdRootId, scheduleId],
+  )
+  return rows.map(mapCoParentingSwapRequest)
+}
+
+export async function createCoParentingSwapRequest(
+  profileId: string,
+  data: {
+    schedule_id: string
+    requested_date: string
+    requested_by: "a" | "b"
+    requested_to: "a" | "b"
+    note: string | null
+  },
+): Promise<CoParentingSwapRequest> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<
+    CoParentingSwapRequest & {
+      requested_date: string | Date
+      created_at: string | Date
+      updated_at: string | Date
+    }
+  >(
+    `INSERT INTO coparenting_swap_requests
+      (profile_id, schedule_id, requested_date, requested_by, requested_to, note)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     RETURNING *`,
+    [householdRootId, data.schedule_id, data.requested_date, data.requested_by, data.requested_to, data.note],
+  )
+  return mapCoParentingSwapRequest(rows[0])
+}
+
+export async function resolveCoParentingSwapRequest(
+  profileId: string,
+  requestId: string,
+  resolution: {
+    status: "approved" | "declined"
+    decision_note: string | null
+  },
+): Promise<CoParentingSwapRequest | null> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    const { rows } = await client.query<
+      CoParentingSwapRequest & {
+        requested_date: string | Date
+        created_at: string | Date
+        updated_at: string | Date
+      }
+    >(
+      `UPDATE coparenting_swap_requests
+       SET status = $3, decision_note = $4, updated_at = NOW()
+       WHERE id = $1 AND profile_id = $2
+       RETURNING *`,
+      [requestId, householdRootId, resolution.status, resolution.decision_note],
+    )
+    const request = rows[0] ?? null
+    if (!request) {
+      await client.query("ROLLBACK")
+      return null
+    }
+
+    if (resolution.status === "approved") {
+      await client.query(
+        `INSERT INTO coparenting_overrides (profile_id, schedule_id, override_date, assigned_to, note)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (schedule_id, override_date) DO UPDATE
+         SET assigned_to = EXCLUDED.assigned_to,
+             note = EXCLUDED.note`,
+        [
+          householdRootId,
+          request.schedule_id,
+          isDateValue(request.requested_date) ? request.requested_date.toISOString().slice(0, 10) : String(request.requested_date).slice(0, 10),
+          request.requested_to,
+          request.decision_note ?? request.note,
+        ],
+      )
+    }
+
+    await client.query("COMMIT")
+    return mapCoParentingSwapRequest(request)
+  } catch (error) {
+    await client.query("ROLLBACK")
+    throw error
+  } finally {
+    client.release()
+  }
 }

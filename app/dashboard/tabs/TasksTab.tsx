@@ -17,14 +17,15 @@ interface Props {
   onDeleteTask: (id: string) => void
   saving: boolean
   openSignal?: number
+  readOnly?: boolean
 }
 
-export function TasksTab({ pending, done, assigneeOptions, onAddTask, onEditTask, onToggleTask, onDeleteTask, saving, openSignal }: Props) {
+export function TasksTab({ pending, done, assigneeOptions, onAddTask, onEditTask, onToggleTask, onDeleteTask, saving, openSignal, readOnly = false }: Props) {
   const [showAddTask, setShowAddTask] = useState(false)
 
   useEffect(() => {
-    if (openSignal) { queueMicrotask(() => setShowAddTask(true)) }
-  }, [openSignal])
+    if (openSignal && !readOnly) { queueMicrotask(() => setShowAddTask(true)) }
+  }, [openSignal, readOnly])
 
   async function handleAddTask(title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) {
     const ok = await onAddTask(title, dueDate, dueTime, notes, assigneeName, recurrence, reminderOffsetMinutes)
@@ -38,8 +39,13 @@ export function TasksTab({ pending, done, assigneeOptions, onAddTask, onEditTask
           <h2 style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginBottom: "0.2rem" }}>Tasks & Chores</h2>
           <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>Shared to-dos, chores, and reminders for your household</p>
         </div>
-        <button onClick={() => setShowAddTask(true)} style={{ ...savePillStyle, flexShrink: 0 }}>+ Add task</button>
+        <button onClick={() => !readOnly && setShowAddTask(true)} disabled={readOnly} style={{ ...savePillStyle, flexShrink: 0, opacity: readOnly ? 0.55 : 1, cursor: readOnly ? "not-allowed" : "pointer" }}>+ Add task</button>
       </div>
+      {readOnly && (
+        <div style={{ marginBottom: "1rem", borderRadius: "14px", padding: "0.85rem 0.95rem", border: "1px solid rgba(99,102,241,0.18)", background: "rgba(99,102,241,0.08)", color: "var(--muted)", fontSize: "0.76rem", lineHeight: 1.55 }}>
+          You can view household tasks here, but only adults, co-parents, or the owner can add, edit, complete, or remove them.
+        </div>
+      )}
       {showAddTask && <AddTaskModal assigneeOptions={assigneeOptions} onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
       <div style={{ maxWidth: "600px" }}>
         {pending.length === 0 && done.length === 0 && (
@@ -51,14 +57,14 @@ export function TasksTab({ pending, done, assigneeOptions, onAddTask, onEditTask
         )}
         {pending.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1.5rem" }}>
-              {pending.map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} onEdit={onEditTask} />)}
+              {pending.map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} onEdit={onEditTask} readOnly={readOnly} />)}
           </div>
         )}
         {done.length > 0 && (
           <>
             <p style={{ fontSize: "0.72rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>Completed</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {done.map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} />)}
+              {done.map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} readOnly={readOnly} />)}
             </div>
           </>
         )}

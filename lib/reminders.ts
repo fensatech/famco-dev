@@ -37,3 +37,27 @@ export function getReminderOffsetLabel(
   }
   return option.label
 }
+
+function timeToMinutes(value: string | null | undefined) {
+  if (!value) return null
+  const [hours, minutes] = value.split(":").map(Number)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+  return hours * 60 + minutes
+}
+
+export function isWithinQuietHours(
+  date: Date,
+  quietHoursStart: string | null | undefined,
+  quietHoursEnd: string | null | undefined,
+): boolean {
+  const startMinutes = timeToMinutes(quietHoursStart)
+  const endMinutes = timeToMinutes(quietHoursEnd)
+  if (startMinutes == null || endMinutes == null) return false
+
+  const currentMinutes = date.getHours() * 60 + date.getMinutes()
+  if (startMinutes === endMinutes) return false
+  if (startMinutes < endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes
+  }
+  return currentMinutes >= startMinutes || currentMinutes < endMinutes
+}

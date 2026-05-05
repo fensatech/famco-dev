@@ -9,9 +9,11 @@ interface Options {
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   setReminders: React.Dispatch<React.SetStateAction<Reminder[]>>
+  defaultEventOffsetMinutes?: ReminderOffsetMinutes
+  defaultTaskOffsetMinutes?: ReminderOffsetMinutes
 }
 
-export function useDashboardMutations({ setEvents, setTasks, setReminders }: Options) {
+export function useDashboardMutations({ setEvents, setTasks, setReminders, defaultEventOffsetMinutes = 0, defaultTaskOffsetMinutes = 0 }: Options) {
   const [saving, setSaving] = useState(false)
 
   async function refreshReminders() {
@@ -28,7 +30,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null, reminder_offset_minutes: reminderOffsetMinutes ?? 0 }),
+      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null, reminder_offset_minutes: reminderOffsetMinutes ?? defaultEventOffsetMinutes }),
     })
     if (res.ok) {
       const { event } = await res.json()
@@ -54,7 +56,7 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders }: Opt
         notes: notes || null,
         assignee_name: assigneeName || null,
         recurrence: recurrence || null,
-        reminder_offset_minutes: reminderOffsetMinutes ?? 0,
+        reminder_offset_minutes: reminderOffsetMinutes ?? defaultTaskOffsetMinutes,
       }),
     })
     if (res.ok) {

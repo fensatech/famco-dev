@@ -9,9 +9,10 @@ interface Props {
   scannedCount: number
   pendingTaskCount: number
   appVersion?: string
+  showAdminLink?: boolean
 }
 
-export function SidebarNav({ tab, onTab, scannedCount, pendingTaskCount, appVersion }: Props) {
+export function SidebarNav({ tab, onTab, scannedCount, pendingTaskCount, appVersion, showAdminLink = false }: Props) {
   return (
     <aside
       style={{
@@ -152,6 +153,28 @@ export function SidebarNav({ tab, onTab, scannedCount, pendingTaskCount, appVers
         >
           Version {appVersion}
         </div>
+      )}
+
+      {showAdminLink && (
+        <a
+          href="/admin"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.625rem",
+            padding: "0.65rem 0.875rem",
+            borderRadius: "10px",
+            border: "1px solid rgba(99,102,241,0.14)",
+            background: "rgba(99,102,241,0.06)",
+            color: "#6366F1",
+            fontSize: "0.8rem",
+            fontWeight: 700,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }}
+        >
+          <span>🛡️</span> Admin Portal
+        </a>
       )}
 
       <button

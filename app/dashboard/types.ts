@@ -1,8 +1,18 @@
 import type { Event, Task, CoParentingSchedule, CoParentingOverride } from "@/lib/db"
 import type { BillingSummary } from "@/lib/billing"
-import type { FamilyDocument, FamilyFact, FamilyInvite, HouseholdMember, Reminder, ScannedEventAction } from "@/types"
+import type {
+  CoParentingSwapRequest,
+  FamilyDocument,
+  FamilyFact,
+  FamilyInvite,
+  HouseholdMember,
+  HouseholdNotificationPreferences,
+  HouseholdRole,
+  Reminder,
+  ScannedEventAction,
+} from "@/types"
 
-export type { CoParentingSchedule, CoParentingOverride }
+export type { CoParentingSchedule, CoParentingOverride, CoParentingSwapRequest }
 
 export interface ProfileData {
   firstName: string; lastName: string; email: string
@@ -71,6 +81,9 @@ export type CalView = "day" | "week" | "month"
 export type { BillingSummary }
 
 export interface DashboardViewModel {
+  currentProfileId: string
+  currentHouseholdRole: HouseholdRole
+  notificationPreferences: HouseholdNotificationPreferences
   profile: ProfileData
   billing: BillingSummary
   kids: KidRow[]
@@ -86,6 +99,7 @@ export interface DashboardViewModel {
   reminders: Reminder[]
   provider: string
   appVersion: string
+  isAdmin: boolean
 }
 
 export type DashboardShellProps = DashboardViewModel

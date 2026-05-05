@@ -1,7 +1,9 @@
 "use client"
 import { useState, useEffect } from "react"
 import type { Event, Task } from "@/lib/db"
-import type { FamilyFact, FamilyInvite, HouseholdMember, Reminder, ScannedEventAction } from "@/types"
+import type { FamilyFact, FamilyInvite, HouseholdMember, HouseholdNotificationPreferences, Reminder, ScannedEventAction } from "@/types"
+import { canEditHousehold, canManageBilling, canManageCoParenting, canManageDocuments, canManageExpenses, canManageSharedCalendar, canManageTasks } from "@/lib/permissions"
+import { isWithinQuietHours, normalizeReminderOffsetMinutes } from "@/lib/reminders"
 import type { DashboardShellProps, Tab, DocumentRow, GCalEvent, KidRow, PetRow, ScannedEventRow } from "./types"
 import { useSessionTimeout } from "./hooks/useSessionTimeout"
 import { useInsightsRefresh } from "./hooks/useInsightsRefresh"
@@ -20,10 +22,11 @@ import { DocumentsTab } from "./tabs/DocumentsTab"
 import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
 import { BillingTab } from "./tabs/BillingTab"
-import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride } from "./types"
+import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride, CoParentingSwapRequest } from "./types"
 import { memberColor } from "./lib/events"
 
-export function DashboardShell({ profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion }: DashboardShellProps) {
+export function DashboardShell({ currentProfileId: _currentProfileId, currentHouseholdRole, notificationPreferences: initialNotificationPreferences, profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion, isAdmin }: DashboardShellProps) {
+  void _currentProfileId
   const [tab, setTab] = useState<Tab>("home")
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
@@ -36,6 +39,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   const [householdMembers] = useState<HouseholdMember[]>(initialHouseholdMembers)
   const [insightActions, setInsightActions] = useState<ScannedEventAction[]>(initialInsightActions)
   const [reminders, setReminders] = useState<Reminder[]>(initialReminders)
+  const [notificationPreferences, setNotificationPreferences] = useState<HouseholdNotificationPreferences>(initialNotificationPreferences)
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return "unsupported"
     return Notification.permission
@@ -47,7 +51,16 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   const [addTaskSignal, setAddTaskSignal] = useState(0)
   const [coparentingSchedule, setCoparentingSchedule] = useState<CoParentingSchedule | null>(null)
   const [coparentingOverrides, setCoparentingOverrides] = useState<CoParentingOverride[]>([])
+  const [coparentingRequests, setCoparentingRequests] = useState<CoParentingSwapRequest[]>([])
   const [coparentingLoaded, setCoparentingLoaded] = useState(false)
+
+  const canEditHouseholdData = canEditHousehold(currentHouseholdRole)
+  const canManageSharedData = canManageSharedCalendar(currentHouseholdRole)
+  const canManageTaskData = canManageTasks(currentHouseholdRole)
+  const canManageDocumentData = canManageDocuments(currentHouseholdRole)
+  const canManageExpenseData = canManageExpenses(currentHouseholdRole)
+  const canManageCoparentingData = canManageCoParenting(currentHouseholdRole)
+  const canManageBillingData = canManageBilling(currentHouseholdRole)
 
   useEffect(() => {
     function resetDashboardState() {
@@ -126,7 +139,13 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   }, [])
 
   useEffect(() => {
-    if (notificationPermission !== "granted" || typeof window === "undefined") return
+    if (notificationPermission !== "granted" || !notificationPreferences.browser_enabled || typeof window === "undefined") return
+    if (
+      notificationPreferences.quiet_hours_enabled &&
+      isWithinQuietHours(new Date(), notificationPreferences.quiet_hours_start, notificationPreferences.quiet_hours_end)
+    ) {
+      return
+    }
     const now = Date.now()
     for (const reminder of reminders) {
       const remindAt = new Date(reminder.remind_at).getTime()
@@ -141,14 +160,15 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
         sessionStorage.setItem(deliveredKey, "1")
       } catch {}
     }
-  }, [notificationPermission, reminders])
+  }, [notificationPermission, notificationPreferences, reminders])
 
   useEffect(() => {
     fetch("/api/coparenting")
       .then((r) => r.ok ? r.json() : { schedule: null, overrides: [] })
-      .then(({ schedule, overrides }) => {
+      .then(({ schedule, overrides, swapRequests }) => {
         setCoparentingSchedule(schedule ?? null)
         setCoparentingOverrides(overrides ?? [])
+        setCoparentingRequests(swapRequests ?? [])
         setCoparentingLoaded(true)
       })
       .catch(() => setCoparentingLoaded(true))
@@ -157,9 +177,10 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
   async function saveCoparentingSchedule(data: Omit<CoParentingSchedule, "id" | "profile_id" | "active" | "created_at">): Promise<boolean> {
     const r = await fetch("/api/coparenting", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
     if (!r.ok) return false
-    const { schedule: s, overrides: o } = await r.json()
+    const { schedule: s, overrides: o, swapRequests } = await r.json()
     setCoparentingSchedule(s)
     setCoparentingOverrides(o ?? [])
+    setCoparentingRequests(swapRequests ?? [])
     return true
   }
 
@@ -176,13 +197,81 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
     setCoparentingOverrides((prev) => prev.filter((o) => o.id !== id))
   }
 
+  async function createCoparentingSwapRequest(data: {
+    requested_date: string
+    requested_by: "a" | "b"
+    requested_to: "a" | "b"
+    note: string | null
+  }): Promise<boolean> {
+    if (!coparentingSchedule) return false
+    const r = await fetch("/api/coparenting/swap-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schedule_id: coparentingSchedule.id, ...data }),
+    })
+    if (!r.ok) return false
+    const { request } = await r.json()
+    setCoparentingRequests((prev) => [request, ...prev])
+    return true
+  }
+
+  async function resolveCoparentingSwapRequest(
+    id: string,
+    status: "approved" | "declined",
+    decisionNote?: string | null,
+  ): Promise<boolean> {
+    const r = await fetch(`/api/coparenting/swap-requests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, decision_note: decisionNote ?? null }),
+    })
+    if (!r.ok) return false
+    const { request, overrides } = await r.json()
+    setCoparentingRequests((prev) => prev.map((item) => item.id === id ? request : item))
+    if (Array.isArray(overrides)) {
+      setCoparentingOverrides(overrides)
+    }
+    return true
+  }
+
+  async function saveNotificationPreferences(
+    updates: Partial<Pick<
+      HouseholdNotificationPreferences,
+      | "browser_enabled"
+      | "quiet_hours_enabled"
+      | "quiet_hours_start"
+      | "quiet_hours_end"
+      | "default_event_offset_minutes"
+      | "default_task_offset_minutes"
+      | "default_school_offset_minutes"
+      | "default_bill_offset_minutes"
+      | "default_coparenting_offset_minutes"
+    >>,
+  ): Promise<boolean> {
+    const r = await fetch("/api/notification-preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    })
+    if (!r.ok) return false
+    const { preferences } = await r.json()
+    setNotificationPreferences(preferences)
+    return true
+  }
+
   const { showWarning, dismiss } = useSessionTimeout()
   const { refreshInsights } = useInsightsRefresh({
     provider,
     onScannedEventsUpdate: setScannedEvents,
     onFactsUpdate: setFacts,
   })
-  const { saving, addEvent, addTask, editTask, toggleTask, deleteTask, deleteEvent, updateEvent } = useDashboardMutations({ setEvents, setTasks, setReminders })
+  const { saving, addEvent, addTask, editTask, toggleTask, deleteTask, deleteEvent, updateEvent } = useDashboardMutations({
+    setEvents,
+    setTasks,
+    setReminders,
+    defaultEventOffsetMinutes: normalizeReminderOffsetMinutes(notificationPreferences.default_event_offset_minutes),
+    defaultTaskOffsetMinutes: normalizeReminderOffsetMinutes(notificationPreferences.default_task_offset_minutes),
+  })
 
   const pending = tasks.filter((t) => !t.completed)
   const done = tasks.filter((t) => t.completed)
@@ -257,7 +346,15 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
 
   async function updateInsightAction(
     scannedEventId: string,
-    data: { status?: "new" | "handled"; assigned_to?: string | null; last_action?: "calendar" | "task" | "reminder" | "handled" | null },
+    data: {
+      status?: "new" | "handled"
+      assigned_to?: string | null
+      last_action?: "calendar" | "task" | "reminder" | "handled" | null
+      corrected_member_name?: string | null
+      corrected_member_type?: "adult" | "child" | "pet" | "family" | null
+      corrected_event_type?: ScannedEventRow["event_type"] | null
+      relevance?: "relevant" | "not_relevant" | "needs_review"
+    },
   ) {
     const res = await fetch("/api/insights/actions", {
       method: "PATCH",
@@ -315,6 +412,9 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
     }
     const permission = await Notification.requestPermission()
     setNotificationPermission(permission)
+    if (permission === "granted" && !notificationPreferences.browser_enabled) {
+      void saveNotificationPreferences({ browser_enabled: true })
+    }
   }
 
   async function snoozeReminderOneHourAction(id: string) {
@@ -343,7 +443,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
 
       {/* Sidebar (desktop) */}
       {!isMobile && (
-        <SidebarNav tab={tab} onTab={setTab} scannedCount={scannedEvents.length} pendingTaskCount={pending.length} appVersion={appVersion} />
+        <SidebarNav tab={tab} onTab={setTab} scannedCount={scannedEvents.length} pendingTaskCount={pending.length} appVersion={appVersion} showAdminLink={isAdmin} />
       )}
 
       {/* Main */}
@@ -353,6 +453,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
           isMobile={isMobile}
           appVersion={appVersion}
           reminders={activeReminders}
+          notificationPreferences={notificationPreferences}
           notificationPermission={notificationPermission}
           onEnableDesktopNotifications={enableDesktopNotifications}
           onDismissReminder={dismissReminderAction}
@@ -388,6 +489,17 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
             </div>
           )}
 
+          {!canEditHouseholdData && (
+            <div style={{ marginBottom: "1rem", borderRadius: "16px", padding: "0.95rem 1.05rem", border: "1px solid rgba(129,140,248,0.22)", background: "rgba(129,140,248,0.08)" }}>
+              <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "#6366f1", marginBottom: "0.15rem" }}>
+                Shared household access
+              </div>
+              <div style={{ fontSize: "0.76rem", color: "var(--muted)", lineHeight: 1.55 }}>
+                Your current role is <strong style={{ color: "var(--text)" }}>{currentHouseholdRole.replace("_", " ")}</strong>. You can view the household, but editing family settings, documents, schedules, and billing is limited to adults, co-parents, or the household owner.
+              </div>
+            </div>
+          )}
+
           {tab === "home" && (
             <HomeTab
               firstName={initialProfile.firstName}
@@ -409,6 +521,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               assigneeOptions={assigneeOptions}
               onDismissReminder={dismissReminderAction}
               onSnoozeReminder={snoozeReminderAction}
+              readOnly={!canManageSharedData}
             />
           )}
 
@@ -432,6 +545,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               openSignal={addEventSignal}
               coparentingSchedule={coparentingSchedule}
               coparentingOverrides={coparentingOverrides}
+              readOnly={!canManageSharedData}
             />
           )}
 
@@ -446,6 +560,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               onDeleteTask={deleteTask}
               saving={saving}
               openSignal={addTaskSignal}
+              readOnly={!canManageTaskData}
             />
           )}
 
@@ -461,6 +576,9 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               onAddTask={addTask}
               onAddReminder={addReminder}
               onUpdateAction={updateInsightAction}
+              memberOptions={calendarMemberOptions}
+              role={currentHouseholdRole}
+              reminderDefaults={notificationPreferences}
             />
           )}
 
@@ -494,7 +612,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
           )}
 
           {tab === "expenses" && (
-            <ExpensesTab scannedEvents={scannedEvents} />
+            <ExpensesTab scannedEvents={scannedEvents} canManageExpenses={canManageExpenseData} />
           )}
 
           {tab === "documents" && (
@@ -502,6 +620,7 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               documents={documents}
               memberOptions={calendarMemberOptions}
               onDocumentsChange={setDocuments}
+              canManageDocuments={canManageDocumentData}
             />
           )}
 
@@ -514,6 +633,10 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               onSaveSchedule={saveCoparentingSchedule}
               onAddOverride={addCoparentingOverride}
               onDeleteOverride={deleteCoparentingOverride}
+              swapRequests={coparentingRequests}
+              onCreateSwapRequest={createCoparentingSwapRequest}
+              onResolveSwapRequest={resolveCoparentingSwapRequest}
+              canManage={canManageCoparentingData}
             />
           )}
 
@@ -528,11 +651,14 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
               householdMembers={householdMembers}
               onInvite={createInvite}
               onRevokeInvite={revokeInvite}
+              currentHouseholdRole={currentHouseholdRole}
+              notificationPreferences={notificationPreferences}
+              onSaveNotificationPreferences={saveNotificationPreferences}
             />
           )}
 
           {tab === "billing" && (
-            <BillingTab billing={billing} />
+            <BillingTab billing={billing} canManageBilling={canManageBillingData} />
           )}
 
         </main>
@@ -541,8 +667,8 @@ export function DashboardShell({ profile: initialProfile, billing, kids: initial
       {/* FAB (desktop, home + insights) */}
       {!isMobile && (tab === "home" || tab === "insights") && (
         <FabMenu
-          onAddEvent={() => { setTab("calendar"); setAddEventSignal((n) => n + 1) }}
-          onAddTask={() => { setTab("tasks"); setAddTaskSignal((n) => n + 1) }}
+          onAddEvent={() => { if (canManageSharedData) { setTab("calendar"); setAddEventSignal((n) => n + 1) } }}
+          onAddTask={() => { if (canManageTaskData) { setTab("tasks"); setAddTaskSignal((n) => n + 1) } }}
         />
       )}
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { getProfile, updateProfile } from "@/lib/db"
+import { getHouseholdRole, getProfile, updateProfile } from "@/lib/db"
+import { canEditHousehold } from "@/lib/permissions"
 
 export async function GET() {
   const session = await auth()
@@ -15,6 +16,10 @@ export async function PATCH(req: NextRequest) {
   const session = await auth()
   if (!session?.profileId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  const role = await getHouseholdRole(session.profileId)
+  if (!canEditHousehold(role)) {
+    return NextResponse.json({ error: "You have read-only access for household settings." }, { status: 403 })
   }
 
   let body: Record<string, unknown>

@@ -1,7 +1,9 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
-import { ensureRuntimeSchema, getDocuments, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getKids, getPets, getPrimaryHouseholdProfile, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
+import { isAdminEmail } from "@/lib/admin"
 import { buildBillingSummary, billingEnforcementEnabled } from "@/lib/billing"
+import { ensureRuntimeSchema, getDocuments, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getHouseholdRole, getKids, getNotificationPreferences, getPets, getPrimaryHouseholdProfile, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
+import type { HouseholdRole } from "@/types"
 import { DashboardShell } from "./DashboardShell"
 import packageJson from "../../package.json"
 
@@ -9,7 +11,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.profileId) redirect("/")
   await ensureRuntimeSchema().catch(() => {})
-  const [profile, kids, allEvents, tasks, scannedEvents, facts, documents, pets, invites, householdMembers, insightActions, reminders] = await Promise.all([
+  const [profile, kids, allEvents, tasks, scannedEvents, facts, documents, pets, invites, householdMembers, insightActions, reminders, householdRole, notificationPreferences] = await Promise.all([
     getProfile(session.profileId),
     getKids(session.profileId),
     getEvents(session.profileId),
@@ -22,6 +24,22 @@ export default async function DashboardPage() {
     getHouseholdMembers(session.profileId).catch(() => []),
     getScannedEventActions(session.profileId).catch(() => []),
     getReminders(session.profileId).catch(() => []),
+    getHouseholdRole(session.profileId).catch(() => "member" as HouseholdRole),
+    getNotificationPreferences(session.profileId).catch(() => ({
+      id: "",
+      profile_id: session.profileId,
+      browser_enabled: true,
+      quiet_hours_enabled: false,
+      quiet_hours_start: null,
+      quiet_hours_end: null,
+      default_event_offset_minutes: 0,
+      default_task_offset_minutes: 0,
+      default_school_offset_minutes: 1440,
+      default_bill_offset_minutes: 1440,
+      default_coparenting_offset_minutes: 120,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })),
   ])
   if (!profile?.onboarding_completed) redirect("/onboarding")
   const primaryProfile = (await getPrimaryHouseholdProfile(session.profileId)) ?? profile
@@ -32,6 +50,9 @@ export default async function DashboardPage() {
   })
   return (
     <DashboardShell
+      currentProfileId={session.profileId}
+      currentHouseholdRole={householdRole}
+      notificationPreferences={notificationPreferences}
       profile={{
         firstName: profile.first_name ?? "",
         lastName: profile.last_name ?? "",
@@ -74,6 +95,7 @@ export default async function DashboardPage() {
       insightActions={insightActions}
       reminders={reminders}
       appVersion={packageJson.version}
+      isAdmin={isAdminEmail(profile.email)}
     />
   )
 }

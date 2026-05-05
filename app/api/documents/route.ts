@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { createDocument, ensureRuntimeSchema, getDocuments } from "@/lib/db"
+import { createDocument, ensureRuntimeSchema, getDocuments, getHouseholdRole } from "@/lib/db"
+import { canManageDocuments } from "@/lib/permissions"
 import { uploadToBlob } from "@/lib/storage"
 import type { FamilyDocumentCategory } from "@/types"
 
@@ -21,6 +22,10 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.profileId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  const role = await getHouseholdRole(session.profileId)
+  if (!canManageDocuments(role)) {
+    return NextResponse.json({ error: "You have read-only access for shared documents." }, { status: 403 })
   }
 
   let formData: FormData

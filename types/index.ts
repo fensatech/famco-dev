@@ -114,6 +114,24 @@ export interface HouseholdMember {
   joined_at: string | null
 }
 
+export type HouseholdRole = HouseholdMember["role"]
+
+export interface HouseholdNotificationPreferences {
+  id: string
+  profile_id: string
+  browser_enabled: boolean
+  quiet_hours_enabled: boolean
+  quiet_hours_start: string | null
+  quiet_hours_end: string | null
+  default_event_offset_minutes: number
+  default_task_offset_minutes: number
+  default_school_offset_minutes: number
+  default_bill_offset_minutes: number
+  default_coparenting_offset_minutes: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Reminder {
   id: string
   profile_id: string
@@ -159,7 +177,25 @@ export interface ScannedEventAction {
   status: "new" | "handled"
   assigned_to: string | null
   last_action: "calendar" | "task" | "reminder" | "handled" | null
+  corrected_member_name: string | null
+  corrected_member_type: "adult" | "child" | "pet" | "family" | null
+  corrected_event_type: ScannedEvent["event_type"] | null
+  relevance: "relevant" | "not_relevant" | "needs_review"
   handled_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CoParentingSwapRequest {
+  id: string
+  profile_id: string
+  schedule_id: string
+  requested_date: string
+  requested_by: "a" | "b"
+  requested_to: "a" | "b"
+  status: "pending" | "approved" | "declined"
+  note: string | null
+  decision_note: string | null
   created_at: string
   updated_at: string
 }

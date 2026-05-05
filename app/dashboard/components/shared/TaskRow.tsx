@@ -21,15 +21,16 @@ interface Props {
   onToggle: (id: string, c: boolean) => void
   onDelete: (id: string) => void
   onEdit?: (id: string, data: TaskEditData) => Promise<boolean>
+  readOnly?: boolean
 }
 
-export function TaskRow({ task, assigneeOptions = [], onToggle, onDelete, onEdit }: Props) {
+export function TaskRow({ task, assigneeOptions = [], onToggle, onDelete, onEdit, readOnly = false }: Props) {
   const [showEdit, setShowEdit] = useState(false)
   const dueLabel = fmtDue(task.due_date, task.due_time)
 
   return (
     <>
-      {showEdit && onEdit && (
+      {showEdit && onEdit && !readOnly && (
         <EditTaskModal
           task={task}
           assigneeOptions={assigneeOptions}
@@ -42,7 +43,11 @@ export function TaskRow({ task, assigneeOptions = [], onToggle, onDelete, onEdit
         />
       )}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", padding: "0.625rem 0.875rem", background: "rgba(255,255,255,0.03)", borderRadius: "10px", border: "1px solid var(--border)" }}>
-        <button onClick={() => onToggle(task.id, !task.completed)} style={{ marginTop: "1px", width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0, border: task.completed ? "none" : "2px solid var(--border)", background: task.completed ? "linear-gradient(135deg,#6366f1,#c084fc)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <button
+          onClick={() => !readOnly && onToggle(task.id, !task.completed)}
+          disabled={readOnly}
+          style={{ marginTop: "1px", width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0, border: task.completed ? "none" : "2px solid var(--border)", background: task.completed ? "linear-gradient(135deg,#6366f1,#c084fc)" : "transparent", cursor: readOnly ? "not-allowed" : "pointer", opacity: readOnly ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
           {task.completed && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>}
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -61,10 +66,10 @@ export function TaskRow({ task, assigneeOptions = [], onToggle, onDelete, onEdit
             <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.15rem", lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{task.notes}</div>
           )}
         </div>
-        {onEdit && !task.completed && (
+        {onEdit && !task.completed && !readOnly && (
           <button onClick={() => setShowEdit(true)} title="Edit task" style={{ background: "none", border: "none", color: "var(--muted)", fontSize: "0.85rem", cursor: "pointer", padding: "0 0.2rem", lineHeight: 1, opacity: 0.6, flexShrink: 0 }}>✏️</button>
         )}
-        <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: "1.1rem", cursor: "pointer", padding: "0 0.2rem", lineHeight: 1, flexShrink: 0 }}>×</button>
+        {!readOnly && <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: "1.1rem", cursor: "pointer", padding: "0 0.2rem", lineHeight: 1, flexShrink: 0 }}>×</button>}
       </div>
     </>
   )

@@ -36,6 +36,7 @@ interface Props {
   openSignal?: number
   coparentingSchedule?: CoParentingSchedule | null
   coparentingOverrides?: CoParentingOverride[]
+  readOnly?: boolean
 }
 
 function IcsImportModal({ memberOptions, importing, importResult, fileInputRef, onImport, onClose }: {
@@ -128,7 +129,7 @@ function IcsImportModal({ memberOptions, importing, importResult, fileInputRef, 
   )
 }
 
-export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, memberOptions, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, onOpenBilling, openSignal, coparentingSchedule, coparentingOverrides = [] }: Props) {
+export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, memberOptions, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, onOpenBilling, openSignal, coparentingSchedule, coparentingOverrides = [], readOnly = false }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [typeFilter, setTypeFilter] = useState<"all" | "events" | "tasks">("all")
   const [selectedCalTask, setSelectedCalTask] = useState<Task | null>(null)
@@ -150,10 +151,11 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
   const [gcalSaving, setGcalSaving] = useState(false)
 
   useEffect(() => {
-    if (openSignal) { setShowAddEvent(true) }
-  }, [openSignal])
+    if (openSignal && !readOnly) { setShowAddEvent(true) }
+  }, [openSignal, readOnly])
 
   function openGcalModal(ev: GCalEvent) {
+    if (readOnly) return
     const date = ev.start ? ev.start.split("T")[0] : todayStr()
     const startTime = !ev.allDay && ev.start?.includes("T") ? ev.start.split("T")[1]?.slice(0, 5) : ""
     const endTime = !ev.allDay && ev.end?.includes("T") ? ev.end.split("T")[1]?.slice(0, 5) : ""
@@ -277,6 +279,11 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
 
   return (
     <>
+      {readOnly && (
+        <div style={{ marginBottom: "1rem", borderRadius: "14px", padding: "0.85rem 0.95rem", border: "1px solid rgba(99,102,241,0.18)", background: "rgba(99,102,241,0.08)", color: "var(--muted)", fontSize: "0.76rem", lineHeight: 1.55 }}>
+          You can review the shared calendar here, but only adults, co-parents, or the owner can import calendars, add events, or edit household schedule items.
+        </div>
+      )}
       {/* GCal event detail / edit modal */}
       {selectedGcalEvent && (
         <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
@@ -372,8 +379,8 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
           {(["day","week","month"] as CalView[]).map((v) => (
             <button key={v} onClick={() => setView(v)} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", border: "none", cursor: "pointer", background: view === v ? "linear-gradient(135deg,#34d399,#059669)" : "rgba(255,255,255,0.06)", color: view === v ? "#fff" : "var(--muted)", fontSize: "0.8rem", fontWeight: view === v ? 700 : 400, fontFamily: "'Inter',sans-serif", textTransform: "capitalize" }}>{v}</button>
           ))}
-          <button onClick={() => { setShowImport(true); setImportResult(null) }} style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "8px", padding: "0.4rem 0.75rem", color: "#818cf8", fontSize: "0.78rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>↑ Import .ics</button>
-          <button onClick={() => setShowAddEvent(true)} style={{ ...savePillStyle, marginLeft: "0.25rem" }}>+ Add</button>
+          <button onClick={() => { if (!readOnly) { setShowImport(true); setImportResult(null) } }} disabled={readOnly} style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "8px", padding: "0.4rem 0.75rem", color: "#818cf8", fontSize: "0.78rem", cursor: readOnly ? "not-allowed" : "pointer", opacity: readOnly ? 0.55 : 1, fontFamily: "'Inter',sans-serif" }}>↑ Import .ics</button>
+          <button onClick={() => !readOnly && setShowAddEvent(true)} disabled={readOnly} style={{ ...savePillStyle, marginLeft: "0.25rem", opacity: readOnly ? 0.55 : 1, cursor: readOnly ? "not-allowed" : "pointer" }}>+ Add</button>
         </div>
       </div>
 
@@ -492,7 +499,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
             return totalItems === 0
               ? <div style={{ textAlign: "center", padding: "2rem", color: "var(--muted)", fontSize: "0.875rem" }}>No {typeFilter === "tasks" ? "tasks" : typeFilter === "events" ? "events" : "events or tasks"} for today</div>
               : <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                  {showEvs && todayEvents.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} onUpdate={onUpdateEvent} kids={memberOptions} />)}
+                  {showEvs && todayEvents.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} onUpdate={readOnly ? undefined : onUpdateEvent} kids={memberOptions} readOnly={readOnly} />)}
                   {showEvs && gcalEventsForDate(today).map((ev) => <GCalEventRow key={ev.id ?? ev.title} event={ev} onClick={() => openGcalModal(ev)} />)}
                   {showEvs && todayScanned.map((ev) => <ScannedEventBlock key={ev.id} ev={ev} color={scannedEventColor(ev)} />)}
                   {showTasks && todayTasks.map((t) => (

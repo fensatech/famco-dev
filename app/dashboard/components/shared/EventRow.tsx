@@ -19,11 +19,13 @@ export function EventRow({
   onDelete,
   onUpdate,
   kids,
+  readOnly = false,
 }: {
   event: Event
   onDelete: (id: string) => void
   onUpdate?: (id: string, data: Partial<Event>) => void
   kids?: CalendarMemberOption[]
+  readOnly?: boolean
 }) {
   const [showDetail, setShowDetail] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -42,9 +44,9 @@ export function EventRow({
     : "#34d399"
 
   async function save() {
-    if (!draft.title.trim() || !draft.event_date) return
+    if (!draft.title.trim() || !draft.event_date || !onUpdate) return
     setSaving(true)
-    await onUpdate?.(event.id, {
+    await onUpdate(event.id, {
       title: draft.title.trim(),
       event_date: draft.event_date,
       start_time: draft.start_time || null,
@@ -64,7 +66,7 @@ export function EventRow({
           <div style={{ position: "relative", background: "rgba(255,255,255,0.99)", border: "1px solid rgba(99,102,241,0.4)", borderRadius: "20px", padding: "1.75rem", width: "100%", maxWidth: "480px", boxShadow: "0 24px 80px rgba(0,0,0,0.6)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
               <h3 style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 800, fontSize: "1.1rem" }}>Event Details</h3>
-              <button onClick={() => { setShowDetail(false); setEditing(false) }} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: "1.4rem", cursor: "pointer", lineHeight: 1 }}>x</button>
+              <button onClick={() => { setShowDetail(false); setEditing(false) }} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: "1.4rem", cursor: "pointer", lineHeight: 1 }}>×</button>
             </div>
             {!editing ? (
               <>
@@ -72,7 +74,7 @@ export function EventRow({
                   <div><div style={fieldLabelStyle}>Title</div><div style={{ fontSize: "1rem", fontWeight: 700, marginTop: "0.2rem" }}>{event.title}</div></div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                     <div><div style={fieldLabelStyle}>Date</div><div style={{ fontSize: "0.875rem", marginTop: "0.2rem" }}>{event.event_date}</div></div>
-                    <div><div style={fieldLabelStyle}>Time</div><div style={{ fontSize: "0.875rem", marginTop: "0.2rem" }}>{event.start_time ? fmtTime(event.start_time) : "-"}{event.end_time ? ` -> ${fmtTime(event.end_time)}` : ""}</div></div>
+                    <div><div style={fieldLabelStyle}>Time</div><div style={{ fontSize: "0.875rem", marginTop: "0.2rem" }}>{event.start_time ? fmtTime(event.start_time) : "-"}{event.end_time ? ` → ${fmtTime(event.end_time)}` : ""}</div></div>
                   </div>
                   <div><div style={fieldLabelStyle}>Reminder</div><div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.2rem" }}>{getReminderOffsetLabel(event.reminder_offset_minutes, "event", !!event.start_time)}</div></div>
                   {event.member_name && (
@@ -80,10 +82,12 @@ export function EventRow({
                   )}
                   <div><div style={fieldLabelStyle}>Source</div><div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.2rem" }}>{SOURCE_LABEL[event.source] ?? event.source}</div></div>
                 </div>
-                <div style={{ display: "flex", gap: "0.625rem" }}>
-                  <button onClick={() => { setShowDetail(false); onDelete(event.id) }} style={{ padding: "0.65rem 1rem", borderRadius: "10px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Delete</button>
-                  {onUpdate && <button onClick={() => setEditing(true)} style={{ flex: 1, padding: "0.65rem 1rem", borderRadius: "10px", background: "linear-gradient(135deg,#6366f1,#c084fc)", border: "none", color: "white", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Edit Event</button>}
-                </div>
+                {!readOnly && (
+                  <div style={{ display: "flex", gap: "0.625rem" }}>
+                    <button onClick={() => { setShowDetail(false); onDelete(event.id) }} style={{ padding: "0.65rem 1rem", borderRadius: "10px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Delete</button>
+                    {onUpdate && <button onClick={() => setEditing(true)} style={{ flex: 1, padding: "0.65rem 1rem", borderRadius: "10px", background: "linear-gradient(135deg,#6366f1,#c084fc)", border: "none", color: "white", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Edit Event</button>}
+                  </div>
+                )}
               </>
             ) : (
               <>

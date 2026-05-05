@@ -1,10 +1,15 @@
 import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
-import { createCoParentingOverride } from "@/lib/db"
+import { createCoParentingOverride, getHouseholdRole } from "@/lib/db"
+import { canManageCoParenting } from "@/lib/permissions"
 
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const role = await getHouseholdRole(session.profileId)
+  if (!canManageCoParenting(role)) {
+    return NextResponse.json({ error: "You have read-only access for co-parenting changes." }, { status: 403 })
+  }
   const body = await req.json()
   const { schedule_id, override_date, assigned_to, note } = body
   if (!schedule_id || !override_date || !assigned_to) {

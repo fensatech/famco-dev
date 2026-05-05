@@ -34,9 +34,10 @@ interface Props {
   onNavigate: (tab: Tab) => void
   coparentingSchedule?: CoParentingSchedule | null
   coparentingOverrides?: CoParentingOverride[]
+  readOnly?: boolean
 }
 
-export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memberOptions, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [] }: Props) {
+export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memberOptions, assigneeOptions, onAddEvent, onAddTask, onToggleTask, onDeleteTask, onDeleteEvent, onDismissReminder, onSnoozeReminder, saving, onNavigate, coparentingSchedule, coparentingOverrides = [], readOnly = false }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [todayExpenses, setTodayExpenses] = useState<ExpenseRow[]>([])
@@ -82,6 +83,11 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
     <>
       {showAddEvent && <AddEventModal memberOptions={memberOptions} onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} initialDate={today} />}
       {showAddTask && <AddTaskModal assigneeOptions={assigneeOptions} onSave={handleAddTask} onCancel={() => setShowAddTask(false)} saving={saving} />}
+      {readOnly && (
+        <div style={{ marginBottom: "1rem", borderRadius: "14px", padding: "0.9rem 1rem", border: "1px solid rgba(99,102,241,0.18)", background: "rgba(99,102,241,0.08)", color: "var(--muted)", fontSize: "0.76rem", lineHeight: 1.55 }}>
+          You can review today&apos;s schedule and tasks, but only adults, co-parents, or the owner can add or change shared household items.
+        </div>
+      )}
 
       <div style={{ marginBottom: "2rem" }}>
         <h2 style={{ fontSize: "1.875rem", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "0.25rem" }}>
@@ -173,7 +179,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "2rem" }}>
         <section style={sectionCard}>
-          <SectionHeader title="Today's Schedule" accent="#0EA5E9" onAdd={() => setShowAddEvent(true)} />
+          <SectionHeader title="Today's Schedule" accent="#0EA5E9" onAdd={readOnly ? undefined : () => setShowAddEvent(true)} />
           {(() => {
             const todayTasks = pendingTasks.filter((t) => t.due_date === today)
             const total = events.length + todayTasks.length
@@ -186,7 +192,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
             )
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {events.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} kids={memberOptions} />)}
+                {events.map((ev) => <EventRow key={ev.id} event={ev} onDelete={onDeleteEvent} kids={memberOptions} readOnly={readOnly} />)}
                 {todayTasks.map((t) => (
                   <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 0.75rem", background: "rgba(244,114,182,0.06)", borderLeft: "3px solid #f472b6", borderRadius: "10px", border: "1px solid rgba(244,114,182,0.2)" }}>
                     <span style={{ fontSize: "0.8rem" }}>✅</span>
@@ -199,7 +205,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
           })()}
         </section>
         <section style={sectionCard}>
-          <SectionHeader title="Tasks & Chores" accent="#EC4899" onAdd={() => setShowAddTask(true)} />
+          <SectionHeader title="Tasks & Chores" accent="#EC4899" onAdd={readOnly ? undefined : () => setShowAddTask(true)} />
           {pendingTasks.length === 0 ? (
             <div style={{ padding: "1.5rem 1rem", textAlign: "center", color: "var(--muted)" }}>
               <div style={{ fontSize: "1.5rem", marginBottom: "0.4rem" }}>✅</div>
@@ -208,7 +214,7 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, memb
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {pendingTasks.slice(0, 6).map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} />)}
+              {pendingTasks.slice(0, 6).map((t) => <TaskRow key={t.id} task={t} assigneeOptions={assigneeOptions} onToggle={onToggleTask} onDelete={onDeleteTask} readOnly={readOnly} />)}
               {pendingTasks.length > 6 && <p style={{ fontSize: "0.75rem", color: "var(--muted)", textAlign: "center" }}>+{pendingTasks.length - 6} more in Tasks</p>}
             </div>
           )}

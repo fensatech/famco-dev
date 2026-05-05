@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { getKids, replaceKids, updateProfile } from "@/lib/db"
+import { getHouseholdRole, getKids, replaceKids, updateProfile } from "@/lib/db"
+import { canEditHousehold } from "@/lib/permissions"
 
 export async function GET() {
   const session = await auth()
@@ -15,6 +16,10 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.profileId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  const role = await getHouseholdRole(session.profileId)
+  if (!canEditHousehold(role)) {
+    return NextResponse.json({ error: "You have read-only access for household settings." }, { status: 403 })
   }
 
   let body: { kids: { name: string; first_name?: string | null; last_name?: string | null; dob: string | null; school_name?: string | null; school_address?: string | null; grade?: string | null; daycare_name?: string | null; daycare_address?: string | null }[] }

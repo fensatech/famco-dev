@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
+import { canEditHousehold } from "@/lib/permissions"
 import { signOut } from "next-auth/react"
 import type { ReminderOffsetMinutes } from "@/lib/reminders"
-import type { ScannedEventAction } from "@/types"
-import type { ScannedEventRow } from "../types"
+import type { HouseholdNotificationPreferences, HouseholdRole, ScannedEventAction } from "@/types"
+import type { CalendarMemberOption, ScannedEventRow } from "../types"
 import { todayStr, fmtTime, addDays } from "../lib/date"
 import { EVENT_TYPE_ICON, EVENT_TYPE_LABEL } from "../lib/events"
 import {
@@ -35,8 +36,10 @@ function EventCard({
   ev,
   action,
   assigneeOptions,
+  memberOptions,
   showType,
   today,
+  canManage,
   isAddedCal,
   isAddedTask,
   isReminderAdded,
@@ -45,12 +48,15 @@ function EventCard({
   onAddReminder,
   onAssign,
   onToggleHandled,
+  onCorrect,
 }: {
   ev: ScannedEventRow
   action?: ScannedEventAction
   assigneeOptions: string[]
+  memberOptions: CalendarMemberOption[]
   showType?: boolean
   today: string
+  canManage: boolean
   isAddedCal?: boolean
   isAddedTask?: boolean
   isReminderAdded?: boolean
@@ -59,11 +65,18 @@ function EventCard({
   onAddReminder?: () => Promise<void>
   onAssign?: (assignedTo: string | null) => Promise<void>
   onToggleHandled?: () => Promise<void>
+  onCorrect?: (data: {
+    corrected_member_name?: string | null
+    corrected_member_type?: "adult" | "child" | "pet" | "family" | null
+    corrected_event_type?: ScannedEventRow["event_type"] | null
+    relevance?: "relevant" | "not_relevant" | "needs_review"
+  }) => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false)
   const [adding, setAdding] = useState<"cal" | "task" | "reminder" | "handled" | null>(null)
-  const trust = getInsightTrustProfile(ev)
-  const priority = getInsightPriorityProfile(ev, today)
+  const [savingCorrection, setSavingCorrection] = useState(false)
+  const trust = getInsightTrustProfile(ev, action)
+  const priority = getInsightPriorityProfile(ev, today, action)
 
   async function doAddCal(e: { stopPropagation(): void }) {
     e.stopPropagation()
@@ -102,12 +115,26 @@ function EventCard({
     await onAssign(value || null)
   }
 
+  async function saveCorrection(data: {
+    corrected_member_name?: string | null
+    corrected_member_type?: "adult" | "child" | "pet" | "family" | null
+    corrected_event_type?: ScannedEventRow["event_type"] | null
+    relevance?: "relevant" | "not_relevant" | "needs_review"
+  }) {
+    if (!onCorrect || !canManage) return
+    setSavingCorrection(true)
+    await onCorrect(data)
+    setSavingCorrection(false)
+  }
+
   const dateStr = ev.event_date ? String(ev.event_date).slice(0, 10) : null
   const isUpcoming = !!dateStr && dateStr >= today
   const countdown = dateStr && isUpcoming ? insightsDaysUntil(dateStr, today) : null
   const handled = action?.status === "handled"
-  const memberName = getScannedEventMemberName(ev)
-  const memberType = getScannedEventMemberType(ev)
+  const memberName = getScannedEventMemberName(ev, action)
+  const memberType = getScannedEventMemberType(ev, action)
+  const effectiveEventType = action?.corrected_event_type ?? ev.event_type
+  const relevance = action?.relevance ?? (trust.level === "review" ? "needs_review" : "relevant")
   const memberBadgeColor =
     memberType === "adult"
       ? "#818cf8"
@@ -220,7 +247,7 @@ function EventCard({
                   border: "1px solid var(--border)",
                 }}
               >
-                {EVENT_TYPE_LABEL[ev.event_type] ?? ev.event_type}
+                {EVENT_TYPE_LABEL[effectiveEventType] ?? effectiveEventType}
               </span>
             )}
             {handled && (
@@ -298,7 +325,7 @@ function EventCard({
             </div>
           )}
 
-          {(ev.event_type === "subscription" || ev.event_type === "invoice" || ev.event_type === "bill") && (
+          {(effectiveEventType === "subscription" || effectiveEventType === "invoice" || effectiveEventType === "bill") && (
             <p style={{ fontSize: "0.72rem", color: "#818cf8", marginTop: "0.2rem" }}>
               {ev.vendor ?? ev.organization_name ?? ""}
               {ev.amount != null ? ` - $${Number(ev.amount).toFixed(2)}` : ""}
@@ -307,9 +334,9 @@ function EventCard({
           )}
 
           {!dateStr &&
-            ev.event_type !== "subscription" &&
-            ev.event_type !== "invoice" &&
-            ev.event_type !== "bill" &&
+            effectiveEventType !== "subscription" &&
+            effectiveEventType !== "invoice" &&
+            effectiveEventType !== "bill" &&
             !expanded && (
               <p style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.15rem" }}>
                 {(ev.snippet ?? "").slice(0, 120)}
@@ -380,6 +407,97 @@ function EventCard({
                   Grade: {ev.grade}
                 </p>
               )}
+
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  marginTop: "0.65rem",
+                  marginBottom: "0.55rem",
+                  background: "rgba(16,185,129,0.06)",
+                  border: "1px solid rgba(16,185,129,0.18)",
+                  borderRadius: "10px",
+                  padding: "0.7rem 0.8rem",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
+                  <p style={{ fontSize: "0.68rem", color: "#10b981", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 700 }}>
+                    Improve this match
+                  </p>
+                  {!canManage && (
+                    <span style={{ fontSize: "0.66rem", color: "var(--muted)" }}>View only</span>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: "0.55rem", marginBottom: "0.55rem" }}>
+                  <div>
+                    <label style={{ fontSize: "0.65rem", color: "var(--muted)", fontWeight: 600 }}>Member</label>
+                    <select
+                      value={memberName ?? ""}
+                      disabled={!canManage || savingCorrection}
+                      onChange={(e) => {
+                        const nextName = e.target.value || null
+                        const nextOption = memberOptions.find((option) => option.name === nextName)
+                        void saveCorrection({
+                          corrected_member_name: nextName === "Family" ? "Family" : nextName,
+                          corrected_member_type: nextName === "Family" ? "family" : nextOption?.kind ?? null,
+                          relevance: nextName ? "relevant" : "needs_review",
+                        })
+                      }}
+                      style={{ width: "100%", marginTop: "0.2rem", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.03)", color: "var(--text)", padding: "0.35rem 0.5rem", fontSize: "0.72rem", fontFamily: "'Inter',sans-serif", opacity: !canManage ? 0.65 : 1 }}
+                    >
+                      <option value="">Needs review</option>
+                      <option value="Family">Family</option>
+                      {memberOptions.map((option) => (
+                        <option key={`${option.kind}-${option.name}`} value={option.name}>{option.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.65rem", color: "var(--muted)", fontWeight: 600 }}>Category</label>
+                    <select
+                      value={effectiveEventType}
+                      disabled={!canManage || savingCorrection}
+                      onChange={(e) => void saveCorrection({ corrected_event_type: e.target.value as ScannedEventRow["event_type"] })}
+                      style={{ width: "100%", marginTop: "0.2rem", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.03)", color: "var(--text)", padding: "0.35rem 0.5rem", fontSize: "0.72rem", fontFamily: "'Inter',sans-serif", opacity: !canManage ? 0.65 : 1 }}
+                    >
+                      {[
+                        "calendar_invite",
+                        "appointment",
+                        "school_event",
+                        "medical",
+                        "field_trip",
+                        "no_school",
+                        "special_day",
+                        "activity",
+                        "recital",
+                        "subscription",
+                        "invoice",
+                        "bill",
+                        "other",
+                      ].map((type) => (
+                        <option key={type} value={type}>{EVENT_TYPE_LABEL[type] ?? type}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.65rem", color: "var(--muted)", fontWeight: 600 }}>Status</label>
+                    <select
+                      value={relevance}
+                      disabled={!canManage || savingCorrection}
+                      onChange={(e) => void saveCorrection({ relevance: e.target.value as "relevant" | "not_relevant" | "needs_review" })}
+                      style={{ width: "100%", marginTop: "0.2rem", borderRadius: "8px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.03)", color: "var(--text)", padding: "0.35rem 0.5rem", fontSize: "0.72rem", fontFamily: "'Inter',sans-serif", opacity: !canManage ? 0.65 : 1 }}
+                    >
+                      <option value="relevant">Relevant</option>
+                      <option value="needs_review">Needs review</option>
+                      <option value="not_relevant">Not relevant</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ fontSize: "0.68rem", color: savingCorrection ? "#10b981" : "var(--muted)" }}>
+                  {savingCorrection ? "Saving household feedback..." : "Use these corrections to improve trust and household matching."}
+                </div>
+              </div>
 
               <div
                 style={{
@@ -686,8 +804,15 @@ interface Props {
       status?: "new" | "handled"
       assigned_to?: string | null
       last_action?: "calendar" | "task" | "reminder" | "handled" | null
+      corrected_member_name?: string | null
+      corrected_member_type?: "adult" | "child" | "pet" | "family" | null
+      corrected_event_type?: ScannedEventRow["event_type"] | null
+      relevance?: "relevant" | "not_relevant" | "needs_review"
     },
   ) => Promise<boolean>
+  memberOptions: CalendarMemberOption[]
+  role: HouseholdRole
+  reminderDefaults: HouseholdNotificationPreferences
 }
 
 export function InsightsTab({
@@ -701,6 +826,9 @@ export function InsightsTab({
   onAddTask,
   onAddReminder,
   onUpdateAction,
+  memberOptions,
+  role,
+  reminderDefaults,
 }: Props) {
   const [section, setSection] = useState<string>("dashboard")
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
@@ -712,6 +840,7 @@ export function InsightsTab({
   const [addedAsTask, setAddedAsTask] = useState<Set<string>>(new Set())
   const [addedAsReminder, setAddedAsReminder] = useState<Set<string>>(new Set())
   const actionsById = new Map(insightActions.map((action) => [action.scanned_event_id, action]))
+  const canManageInsights = canEditHousehold(role)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -723,7 +852,8 @@ export function InsightsTab({
   }
 
   async function handleAddToCalendar(ev: ScannedEventRow): Promise<void> {
-    const memberName = getScannedEventMemberName(ev)
+    const action = actionsById.get(ev.id)
+    const memberName = getScannedEventMemberName(ev, action)
     const ok = await onAddEvent(
       ev.calendar_title ?? ev.title,
       String(ev.event_date ?? "").slice(0, 10),
@@ -737,8 +867,9 @@ export function InsightsTab({
   }
 
   async function handleAddAsTask(ev: ScannedEventRow): Promise<void> {
-    const memberName = getScannedEventMemberName(ev)
-    const memberType = getScannedEventMemberType(ev)
+    const action = actionsById.get(ev.id)
+    const memberName = getScannedEventMemberName(ev, action)
+    const memberType = getScannedEventMemberType(ev, action)
     const ok = await onAddTask(
       ev.calendar_title ?? ev.title,
       undefined,
@@ -753,8 +884,16 @@ export function InsightsTab({
   }
 
   async function handleAddReminder(ev: ScannedEventRow): Promise<void> {
+    const offsetMinutes =
+      ev.event_type === "subscription" || ev.event_type === "invoice" || ev.event_type === "bill"
+        ? reminderDefaults.default_bill_offset_minutes
+        : ev.event_type === "school_event" || ev.event_type === "field_trip" || ev.event_type === "no_school" || ev.event_type === "special_day"
+          ? reminderDefaults.default_school_offset_minutes
+          : reminderDefaults.default_event_offset_minutes
     const remindAt = ev.event_date
-      ? new Date(`${String(ev.event_date).slice(0, 10)}T09:00:00`).toISOString()
+      ? new Date(
+          new Date(`${String(ev.event_date).slice(0, 10)}T09:00:00`).getTime() - (offsetMinutes * 60_000),
+        ).toISOString()
       : (() => {
           const next = new Date()
           next.setDate(next.getDate() + 1)
@@ -778,6 +917,18 @@ export function InsightsTab({
     await onUpdateAction(ev.id, { assigned_to: assignedTo })
   }
 
+  async function handleCorrect(
+    ev: ScannedEventRow,
+    data: {
+      corrected_member_name?: string | null
+      corrected_member_type?: "adult" | "child" | "pet" | "family" | null
+      corrected_event_type?: ScannedEventRow["event_type"] | null
+      relevance?: "relevant" | "not_relevant" | "needs_review"
+    },
+  ): Promise<void> {
+    await onUpdateAction(ev.id, data)
+  }
+
   async function handleToggleHandled(ev: ScannedEventRow): Promise<void> {
     const current = actionsById.get(ev.id)
     const nextStatus = current?.status === "handled" ? "new" : "handled"
@@ -794,11 +945,15 @@ export function InsightsTab({
     const grouped = new Map<string, InsightMemberFilterOption>()
 
     for (const event of scannedEvents) {
-      const memberName = getScannedEventMemberName(event)
-      const memberType = getScannedEventMemberType(event)
+      const action = actionsById.get(event.id)
+      if (action?.relevance === "not_relevant") continue
+      const memberName = getScannedEventMemberName(event, action)
+      const memberType = getScannedEventMemberType(event, action)
       const key = memberName
         ? `member:${memberName.toLowerCase()}`
-        : memberType === "family"
+        : action?.relevance === "needs_review"
+          ? "unmatched"
+          : memberType === "family"
           ? "family"
           : "unmatched"
 
@@ -828,19 +983,26 @@ export function InsightsTab({
   })()
 
   const all = scannedEvents.filter((event) => {
+    const action = actionsById.get(event.id)
+    if (action?.relevance === "not_relevant") return false
     if (!memberFilter) return true
     if (memberFilter === "__unmatched__") {
-      return !getScannedEventMemberName(event) && getScannedEventMemberType(event) !== "family"
+      return (action?.relevance === "needs_review") || (!getScannedEventMemberName(event, action) && getScannedEventMemberType(event, action) !== "family")
     }
-    return matchesScannedEventMember(event, memberFilter)
+    return matchesScannedEventMember(event, memberFilter, action)
   })
 
   const actionNeeded = sortEventsByPriority(
     all.filter((event) => {
       const action = actionsById.get(event.id)
-      return action?.status !== "handled" && (event.urgency === "high" || !!event.special_instructions)
+      return action?.status !== "handled" && (
+        action?.relevance === "needs_review" ||
+        event.urgency === "high" ||
+        !!event.special_instructions
+      )
     }),
     today,
+    actionsById,
   )
 
   const thisWeek = all
@@ -852,7 +1014,10 @@ export function InsightsTab({
 
   const categoryData = INSIGHT_CATEGORIES.map((category) => ({
     ...category,
-    events: sortEvents(all.filter((event) => category.types.includes(event.event_type)), sortOrder),
+    events: sortEvents(
+      all.filter((event) => category.types.includes(actionsById.get(event.id)?.corrected_event_type ?? event.event_type)),
+      sortOrder,
+    ),
   })).filter((category) => category.events.length > 0)
 
   const subscriptions = categoryData.find((category) => category.id === "subscriptions")?.events ?? []
@@ -1254,8 +1419,10 @@ export function InsightsTab({
                     ev={ev}
                     action={actionsById.get(ev.id)}
                     assigneeOptions={assigneeOptions}
+                    memberOptions={memberOptions}
                     showType
                     today={today}
+                    canManage={canManageInsights}
                     isAddedCal={addedToCalendar.has(ev.id)}
                     isAddedTask={addedAsTask.has(ev.id)}
                     isReminderAdded={addedAsReminder.has(ev.id)}
@@ -1264,6 +1431,7 @@ export function InsightsTab({
                     onAddReminder={() => handleAddReminder(ev)}
                     onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
                     onToggleHandled={() => handleToggleHandled(ev)}
+                    onCorrect={(data) => handleCorrect(ev, data)}
                   />
                 ))}
               </div>
@@ -1280,8 +1448,10 @@ export function InsightsTab({
                     ev={ev}
                     action={actionsById.get(ev.id)}
                     assigneeOptions={assigneeOptions}
+                    memberOptions={memberOptions}
                     showType
                     today={today}
+                    canManage={canManageInsights}
                     isAddedCal={addedToCalendar.has(ev.id)}
                     isAddedTask={addedAsTask.has(ev.id)}
                     isReminderAdded={addedAsReminder.has(ev.id)}
@@ -1290,6 +1460,7 @@ export function InsightsTab({
                     onAddReminder={() => handleAddReminder(ev)}
                     onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
                     onToggleHandled={() => handleToggleHandled(ev)}
+                    onCorrect={(data) => handleCorrect(ev, data)}
                   />
                 ))}
               </div>
@@ -1348,7 +1519,9 @@ export function InsightsTab({
                       ev={ev}
                       action={actionsById.get(ev.id)}
                       assigneeOptions={assigneeOptions}
+                      memberOptions={memberOptions}
                       today={today}
+                      canManage={canManageInsights}
                       isAddedCal={addedToCalendar.has(ev.id)}
                       isAddedTask={addedAsTask.has(ev.id)}
                       isReminderAdded={addedAsReminder.has(ev.id)}
@@ -1357,6 +1530,7 @@ export function InsightsTab({
                       onAddReminder={() => handleAddReminder(ev)}
                       onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
                       onToggleHandled={() => handleToggleHandled(ev)}
+                      onCorrect={(data) => handleCorrect(ev, data)}
                     />
                   ))}
                   {remaining > 0 && (
@@ -1385,14 +1559,16 @@ export function InsightsTab({
           {activeSectionEvents.length === 0 ? (
             <Empty text={memberFilter ? `No ${section} emails found for this filter` : `No ${section} emails found`} />
           ) : (
-            (section === "action" ? sortEventsByPriority(activeSectionEvents, today) : activeSectionEvents).map((ev) => (
+            (section === "action" ? sortEventsByPriority(activeSectionEvents, today, actionsById) : activeSectionEvents).map((ev) => (
               <EventCard
                 key={ev.id}
                 ev={ev}
                 action={actionsById.get(ev.id)}
                 assigneeOptions={assigneeOptions}
+                memberOptions={memberOptions}
                 showType
                 today={today}
+                canManage={canManageInsights}
                 isAddedCal={addedToCalendar.has(ev.id)}
                 isAddedTask={addedAsTask.has(ev.id)}
                 isReminderAdded={addedAsReminder.has(ev.id)}
@@ -1401,6 +1577,7 @@ export function InsightsTab({
                 onAddReminder={() => handleAddReminder(ev)}
                 onAssign={(assignedTo) => handleAssign(ev, assignedTo)}
                 onToggleHandled={() => handleToggleHandled(ev)}
+                onCorrect={(data) => handleCorrect(ev, data)}
               />
             ))
           )}

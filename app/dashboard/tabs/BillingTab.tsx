@@ -60,7 +60,7 @@ function StatusCard({
   )
 }
 
-export function BillingTab({ billing }: { billing: BillingSummary }) {
+export function BillingTab({ billing, canManageBilling = true }: { billing: BillingSummary; canManageBilling?: boolean }) {
   const [confirmValue, setConfirmValue] = useState("")
   const [deletionFeedbackCategory, setDeletionFeedbackCategory] = useState<DeletionFeedbackCategory | "">("")
   const [deleting, setDeleting] = useState(false)
@@ -147,7 +147,12 @@ export function BillingTab({ billing }: { billing: BillingSummary }) {
           <div style={{ fontSize: "0.76rem", color: "var(--muted)", lineHeight: 1.6, marginBottom: "1rem" }}>
             Famco is set up to use PayPal as the subscription gateway. Once you are ready to stop test mode, the household owner can activate the recurring ${billing.monthlyPrice}/month plan here.
           </div>
-          {billing.paypalSubscribeUrl ? (
+          {!canManageBilling && (
+            <div style={{ fontSize: "0.75rem", color: "#f59e0b", lineHeight: 1.55, marginBottom: "0.8rem" }}>
+              Only the primary household owner can manage recurring billing for this family.
+            </div>
+          )}
+          {billing.paypalSubscribeUrl && canManageBilling ? (
             <a
               href={billing.paypalSubscribeUrl}
               target="_blank"
@@ -162,7 +167,7 @@ export function BillingTab({ billing }: { billing: BillingSummary }) {
               disabled
               style={{ ...savePillStyle, opacity: 0.55, cursor: "not-allowed" }}
             >
-              PayPal checkout not configured yet
+              {canManageBilling ? "PayPal checkout not configured yet" : "Billing managed by household owner"}
             </button>
           )}
         </div>

@@ -1,6 +1,6 @@
 "use client"
 import { useState } from "react"
-import type { KidRow, CoParentingSchedule, CoParentingOverride } from "../types"
+import type { KidRow, CoParentingSchedule, CoParentingOverride, CoParentingSwapRequest } from "../types"
 import { todayStr } from "../lib/date"
 import { sectionCard } from "../styles"
 import {
@@ -13,12 +13,12 @@ const PARENT_B = "#F59E0B"
 const parentColor = (p: "a" | "b") => (p === "a" ? PARENT_A : PARENT_B)
 
 const SCHEDULE_TYPES = [
-  { value: "week_on_off",   label: "Week On / Week Off",    desc: "Full weeks alternate every 7 days",            pattern: "7 · 7" },
-  { value: "223",           label: "2-2-3",                 desc: "2 days, 2 days, 3 days — 14-day rotation",     pattern: "AA·BB·AAA" },
-  { value: "2255",          label: "2-2-5-5",               desc: "Short blocks then longer blocks",               pattern: "AA·BB·AAAAA·BBBBB" },
-  { value: "alt_weekends",  label: "Alternating Weekends",  desc: "Weekdays with one parent, weekends alternate",  pattern: "WD + wknd" },
-  { value: "custom",        label: "Custom / Manual",       desc: "Track manually — no auto-calculation",          pattern: "—" },
-]
+  { value: "week_on_off", label: "Week On / Week Off", desc: "Full weeks alternate every 7 days", pattern: "7 · 7" },
+  { value: "223", label: "2-2-3", desc: "2 days, 2 days, 3 days across a 14-day rotation", pattern: "AA · BB · AAA" },
+  { value: "2255", label: "2-2-5-5", desc: "Short blocks then longer blocks", pattern: "AA · BB · AAAAA · BBBBB" },
+  { value: "alt_weekends", label: "Alternating Weekends", desc: "Weekdays with one parent, weekends alternate", pattern: "WD + wknd" },
+  { value: "custom", label: "Custom / Manual", desc: "Track manually without auto-calculation", pattern: "—" },
+] as const
 
 interface ScheduleDraft {
   schedule_type: string
@@ -36,14 +36,25 @@ interface OverrideDraft {
   note: string
 }
 
+interface SwapDraft {
+  date: string
+  requested_by: "a" | "b"
+  requested_to: "a" | "b"
+  note: string
+}
+
 interface Props {
   kids: KidRow[]
   schedule: CoParentingSchedule | null
   overrides: CoParentingOverride[]
+  swapRequests: CoParentingSwapRequest[]
   loaded: boolean
   onSaveSchedule: (data: Omit<CoParentingSchedule, "id" | "profile_id" | "active" | "created_at">) => Promise<boolean>
   onAddOverride: (scheduleId: string, data: { override_date: string; assigned_to: string; note: string | null }) => Promise<boolean>
   onDeleteOverride: (id: string) => Promise<void>
+  onCreateSwapRequest: (data: { requested_date: string; requested_by: "a" | "b"; requested_to: "a" | "b"; note: string | null }) => Promise<boolean>
+  onResolveSwapRequest: (id: string, status: "approved" | "declined", decisionNote?: string | null) => Promise<boolean>
+  canManage?: boolean
 }
 
 function parentLabel(schedule: CoParentingSchedule, p: "a" | "b") {
@@ -60,7 +71,19 @@ function fmtOverrideDate(s: string): string {
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
 }
 
-export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedule, onAddOverride, onDeleteOverride }: Props) {
+export function CoParentingTab({
+  kids,
+  schedule,
+  overrides,
+  swapRequests,
+  loaded,
+  onSaveSchedule,
+  onAddOverride,
+  onDeleteOverride,
+  onCreateSwapRequest,
+  onResolveSwapRequest,
+  canManage = true,
+}: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<ScheduleDraft>({
     schedule_type: "week_on_off",
@@ -73,9 +96,13 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
   })
   const [overrideDraft, setOverrideDraft] = useState<OverrideDraft>({ date: "", parent: "a", note: "" })
   const [showOverrideForm, setShowOverrideForm] = useState(false)
+  const [showSwapForm, setShowSwapForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingOverride, setSavingOverride] = useState(false)
+  const [savingSwap, setSavingSwap] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [resolvingSwapId, setResolvingSwapId] = useState<string | null>(null)
+  const [swapDraft, setSwapDraft] = useState<SwapDraft>({ date: "", requested_by: "a", requested_to: "b", note: "" })
 
   const today = todayStr()
   const isCustom = schedule?.schedule_type === "custom"
@@ -92,6 +119,7 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
   const assignedKids = kids.filter((k) => (schedule?.kid_ids ?? []).includes(k.id))
 
   function startEditing() {
+    if (!canManage) return
     if (schedule) {
       setDraft({
         schedule_type: schedule.schedule_type,
@@ -147,28 +175,56 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
     setDeletingId(null)
   }
 
+  async function handleCreateSwapRequest() {
+    if (!schedule || !swapDraft.date) return
+    setSavingSwap(true)
+    const ok = await onCreateSwapRequest({
+      requested_date: swapDraft.date,
+      requested_by: swapDraft.requested_by,
+      requested_to: swapDraft.requested_to,
+      note: swapDraft.note || null,
+    })
+    setSavingSwap(false)
+    if (ok) {
+      setSwapDraft({ date: "", requested_by: "a", requested_to: "b", note: "" })
+      setShowSwapForm(false)
+    }
+  }
+
+  async function handleResolveSwapRequest(id: string, status: "approved" | "declined") {
+    setResolvingSwapId(id)
+    await onResolveSwapRequest(id, status)
+    setResolvingSwapId(null)
+  }
+
   const showBuilder = !loaded || !schedule || editing
 
   return (
     <>
-      {/* ── Header ── */}
       <div style={{ marginBottom: "2rem" }}>
         <h2 style={{ fontSize: "1.875rem", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "0.25rem" }}>
           Co-Parenting
         </h2>
         <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
-          Track parenting schedules, custody time, and handoffs across households.
+          Track parenting schedules, custody time, handoffs, and swap requests across households.
         </p>
       </div>
+
+      {!canManage && (
+        <div style={{ ...sectionCard, marginBottom: "1.5rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)" }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "#6366F1", marginBottom: "0.2rem" }}>View-only co-parenting access</div>
+          <div style={{ fontSize: "0.78rem", color: "var(--muted)", lineHeight: 1.55 }}>
+            You can review the parenting plan, handoffs, and exceptions here, but only adults, co-parents, or the household owner can change schedules and swap requests.
+          </div>
+        </div>
+      )}
 
       {!loaded && (
         <div style={{ color: "var(--muted)", fontSize: "0.85rem", padding: "2rem 0" }}>Loading…</div>
       )}
 
-      {/* ── Today + This Week (when schedule active and not custom) ── */}
       {loaded && schedule && !isCustom && !editing && (
         <>
-          {/* Today card */}
           <div style={{ ...sectionCard, marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1.25rem", flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: "180px" }}>
               <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.5rem" }}>Today</div>
@@ -204,35 +260,23 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
             )}
           </div>
 
-          {/* Week strip */}
           <div style={{ ...sectionCard, marginBottom: "1.5rem" }}>
             <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "1rem" }}>This Week</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0.375rem" }}>
               {weekStrip.map((day: WeekDayInfo) => (
-                <div key={day.date} style={{
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem",
-                  padding: "0.625rem 0.375rem", borderRadius: "12px",
-                  background: day.isToday ? `${parentColor(day.parent)}15` : "transparent",
-                  border: day.isToday ? `1.5px solid ${parentColor(day.parent)}40` : "1px solid transparent",
-                  position: "relative",
-                }}>
-                  <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "var(--muted)" }}>{day.dayLabel}</span>
-                  <span style={{ fontSize: "0.85rem", fontWeight: day.isToday ? 800 : 500, color: day.isToday ? "var(--text)" : "var(--muted)" }}>{day.dateNum}</span>
-                  <div style={{
-                    width: "28px", height: "20px", borderRadius: "10px",
-                    background: parentColor(day.parent),
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "0.6rem", fontWeight: 800, color: "white",
-                  }}>
+                <div key={day.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem", padding: "0.625rem 0.375rem", borderRadius: "12px", background: day.isToday ? "rgba(255,255,255,0.06)" : "var(--bg)", border: day.isToday ? "1px solid rgba(255,255,255,0.12)" : "1px solid var(--border)", position: "relative" }}>
+                  <div style={{ fontSize: "0.65rem", fontWeight: 700, color: day.isToday ? "var(--text)" : "var(--muted)", textTransform: "uppercase" }}>{day.dayLabel}</div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: day.isToday ? "var(--text)" : "var(--muted)" }}>{day.dateNum}</div>
+                  <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: parentColor(day.parent), color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.72rem", marginTop: "0.15rem", position: "relative" }}>
                     {day.parent === "a" ? schedule.parent_a_name.slice(0, 1).toUpperCase() : schedule.parent_b_name.slice(0, 1).toUpperCase()}
+                    {day.isExchange && (
+                      <span style={{ position: "absolute", top: "-6px", right: "-2px", fontSize: "0.55rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "4px", padding: "0 3px", color: "var(--muted)", fontWeight: 600 }}>⇄</span>
+                    )}
                   </div>
-                  {day.isExchange && (
-                    <span style={{ position: "absolute", top: "-6px", right: "-2px", fontSize: "0.55rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "4px", padding: "0 3px", color: "var(--muted)", fontWeight: 600 }}>⇄</span>
-                  )}
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: "0.875rem", display: "flex", gap: "1.25rem" }}>
+            <div style={{ marginTop: "0.875rem", display: "flex", gap: "1.25rem", flexWrap: "wrap" }}>
               <span style={{ fontSize: "0.72rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.35rem" }}>
                 <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: PARENT_A }} />
                 {schedule.parent_a_name}
@@ -241,13 +285,12 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
                 <span style={{ display: "inline-block", width: "10px", height: "10px", borderRadius: "50%", background: PARENT_B }} />
                 {schedule.parent_b_name}
               </span>
-              <span style={{ fontSize: "0.72rem", color: "var(--muted)", marginLeft: "0.5rem" }}>⇄ = exchange day</span>
+              <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>⇄ = exchange day</span>
             </div>
           </div>
         </>
       )}
 
-      {/* ── Active Schedule Summary (not editing) ── */}
       {loaded && schedule && !editing && (
         <div style={{ ...sectionCard, marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "1rem" }}>
@@ -257,7 +300,7 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
                 {SCHEDULE_TYPES.find((s) => s.value === schedule.schedule_type)?.label ?? schedule.schedule_type}
               </div>
             </div>
-            <button onClick={startEditing} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", background: "none", border: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.8rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Edit</button>
+            {canManage && <button onClick={startEditing} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", background: "none", border: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.8rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Edit</button>}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem 1.5rem", fontSize: "0.82rem", color: "var(--muted)" }}>
             <span>
@@ -273,7 +316,6 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
         </div>
       )}
 
-      {/* ── Schedule Builder ── */}
       {showBuilder && (
         <div style={{ ...sectionCard, marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
@@ -285,7 +327,6 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
             )}
           </div>
 
-          {/* Parent names */}
           <div style={{ marginBottom: "1.5rem" }}>
             <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.75rem" }}>Parent Names</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
@@ -307,7 +348,6 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
             </div>
           </div>
 
-          {/* Schedule type */}
           <div style={{ marginBottom: "1.5rem" }}>
             <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.75rem" }}>Schedule Type</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.5rem" }}>
@@ -329,26 +369,21 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
             </div>
           </div>
 
-          {/* Start date + exchange details */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1.5rem" }}>
             <div>
               <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.35rem" }}>Schedule Start Date</label>
-              <input type="date" value={draft.start_date} onChange={(e) => setDraft((d) => ({ ...d, start_date: e.target.value }))}
-                style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
+              <input type="date" value={draft.start_date} onChange={(e) => setDraft((d) => ({ ...d, start_date: e.target.value }))} style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
             </div>
             <div>
               <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.35rem" }}>Exchange / Handoff Time (optional)</label>
-              <input type="time" value={draft.exchange_time} onChange={(e) => setDraft((d) => ({ ...d, exchange_time: e.target.value }))}
-                style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
+              <input type="time" value={draft.exchange_time} onChange={(e) => setDraft((d) => ({ ...d, exchange_time: e.target.value }))} style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.35rem" }}>Exchange Location (optional)</label>
-              <input type="text" value={draft.exchange_location} onChange={(e) => setDraft((d) => ({ ...d, exchange_location: e.target.value }))} placeholder="e.g. School pickup, Starbucks on Main St"
-                style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }} />
+              <input type="text" value={draft.exchange_location} onChange={(e) => setDraft((d) => ({ ...d, exchange_location: e.target.value }))} placeholder="e.g. School pickup, coffee shop on Main St" style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }} />
             </div>
           </div>
 
-          {/* Children */}
           {kids.length > 0 && (
             <div style={{ marginBottom: "1.5rem" }}>
               <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.75rem" }}>Assign Children</div>
@@ -390,16 +425,15 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
         </div>
       )}
 
-      {/* ── Exceptions / Overrides ── */}
       {loaded && schedule && !editing && (
-        <div style={{ ...sectionCard }}>
+        <div style={{ ...sectionCard, marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
             <div>
               <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.25rem" }}>Exceptions & Overrides</div>
               <p style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Holidays, swaps, or one-off changes to the recurring schedule.</p>
             </div>
             {!showOverrideForm && (
-              <button onClick={() => setShowOverrideForm(true)} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.3)", color: "#06B6D4", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
+              <button onClick={() => setShowOverrideForm(true)} disabled={!canManage} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.3)", color: "#06B6D4", fontSize: "0.8rem", fontWeight: 600, cursor: canManage ? "pointer" : "not-allowed", opacity: canManage ? 1 : 0.55, fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
                 + Add exception
               </button>
             )}
@@ -410,8 +444,7 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "0.625rem", marginBottom: "0.75rem" }}>
                 <div>
                   <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.3rem" }}>Date</label>
-                  <input type="date" value={overrideDraft.date} onChange={(e) => setOverrideDraft((d) => ({ ...d, date: e.target.value }))}
-                    style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
+                  <input type="date" value={overrideDraft.date} onChange={(e) => setOverrideDraft((d) => ({ ...d, date: e.target.value }))} style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
                 </div>
                 <div>
                   <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.3rem" }}>Assigned to</label>
@@ -431,8 +464,7 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
                 </div>
                 <div>
                   <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.3rem" }}>Note (optional)</label>
-                  <input type="text" value={overrideDraft.note} onChange={(e) => setOverrideDraft((d) => ({ ...d, note: e.target.value }))} placeholder="e.g. Spring Break, swap agreed"
-                    style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }} />
+                  <input type="text" value={overrideDraft.note} onChange={(e) => setOverrideDraft((d) => ({ ...d, note: e.target.value }))} placeholder="e.g. Spring break, agreed swap" style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }} />
                 </div>
               </div>
               <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -458,9 +490,11 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
                     → {parentLabel(schedule, o.assigned_to as "a" | "b")}
                   </span>
                   {o.note && <span style={{ fontSize: "0.75rem", color: "var(--muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.note}</span>}
-                  <button onClick={() => handleDeleteOverride(o.id)} disabled={deletingId === o.id} style={{ marginLeft: "auto", background: "none", border: "none", color: "#f87171", fontSize: "0.75rem", cursor: "pointer", fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
-                    {deletingId === o.id ? "…" : "Remove"}
-                  </button>
+                  {canManage && (
+                    <button onClick={() => void handleDeleteOverride(o.id)} disabled={deletingId === o.id} style={{ marginLeft: "auto", background: "none", border: "none", color: "#f87171", fontSize: "0.75rem", cursor: "pointer", fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
+                      {deletingId === o.id ? "…" : "Remove"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -468,15 +502,110 @@ export function CoParentingTab({ kids, schedule, overrides, loaded, onSaveSchedu
         </div>
       )}
 
-      {/* ── Empty state (no schedule, after load) ── */}
+      {loaded && schedule && !editing && (
+        <div style={{ ...sectionCard }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", gap: "1rem", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.25rem" }}>Swap Requests</div>
+              <p style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Request one-off parenting time swaps, then approve or decline them without changing the whole recurring plan.</p>
+            </div>
+            {!showSwapForm && (
+              <button onClick={() => setShowSwapForm(true)} disabled={!canManage} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.3)", color: "#6366F1", fontSize: "0.8rem", fontWeight: 600, cursor: canManage ? "pointer" : "not-allowed", opacity: canManage ? 1 : 0.55, fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
+                + Request swap
+              </button>
+            )}
+          </div>
+
+          {showSwapForm && (
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: "12px", padding: "1rem", marginBottom: "1rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.5fr", gap: "0.625rem", marginBottom: "0.75rem" }}>
+                <div>
+                  <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.3rem" }}>Date</label>
+                  <input type="date" value={swapDraft.date} onChange={(e) => setSwapDraft((d) => ({ ...d, date: e.target.value }))} style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", outline: "none", colorScheme: "dark", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.3rem" }}>Swap to</label>
+                  <div style={{ display: "flex", gap: "0.375rem" }}>
+                    {(["a", "b"] as const).map((p) => (
+                      <button key={p} type="button" onClick={() => setSwapDraft((d) => ({ ...d, requested_to: p, requested_by: p === "a" ? "b" : "a" }))} style={{
+                        flex: 1, padding: "0.5rem", borderRadius: "8px",
+                        border: swapDraft.requested_to === p ? `2px solid ${parentColor(p)}` : "1px solid var(--border)",
+                        background: swapDraft.requested_to === p ? `${parentColor(p)}18` : "var(--bg)",
+                        color: swapDraft.requested_to === p ? parentColor(p) : "var(--muted)",
+                        fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif",
+                      }}>
+                        {p === "a" ? schedule.parent_a_name.slice(0, 10) : schedule.parent_b_name.slice(0, 10)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.3rem" }}>Reason (optional)</label>
+                  <input type="text" value={swapDraft.note} onChange={(e) => setSwapDraft((d) => ({ ...d, note: e.target.value }))} placeholder="e.g. travel, school concert, sick day" style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.82rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button onClick={() => { setShowSwapForm(false); setSwapDraft({ date: "", requested_by: "a", requested_to: "b", note: "" }) }} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", background: "none", border: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.8rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Cancel</button>
+                <button onClick={() => void handleCreateSwapRequest()} disabled={!swapDraft.date || savingSwap} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", border: "none", background: !swapDraft.date || savingSwap ? "rgba(99,102,241,0.35)" : "linear-gradient(135deg,#6366F1,#8B5CF6)", color: "white", fontSize: "0.8rem", fontWeight: 600, cursor: !swapDraft.date || savingSwap ? "not-allowed" : "pointer", fontFamily: "'Inter',sans-serif" }}>
+                  {savingSwap ? "Saving…" : "Save request"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {swapRequests.length === 0 && !showSwapForm && (
+            <p style={{ fontSize: "0.8rem", color: "var(--muted)", padding: "0.75rem 0" }}>No swap requests yet.</p>
+          )}
+
+          {swapRequests.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {swapRequests.map((request) => {
+                const requestedParent = request.requested_to === "a" ? schedule.parent_a_name : schedule.parent_b_name
+                const requestedBy = request.requested_by === "a" ? schedule.parent_a_name : schedule.parent_b_name
+                const statusColor = request.status === "approved" ? "#22c55e" : request.status === "declined" ? "#f87171" : "#f59e0b"
+                return (
+                  <div key={request.id} style={{ padding: "0.85rem 1rem", background: "var(--bg)", borderRadius: "10px", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.25rem" }}>
+                          <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>{fmtOverrideDate(request.requested_date)}</span>
+                          <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.08rem 0.42rem", borderRadius: "999px", background: `${statusColor}18`, color: statusColor, border: `1px solid ${statusColor}33` }}>
+                            {request.status}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.76rem", color: "var(--muted)", lineHeight: 1.55 }}>
+                          Requested by <strong style={{ color: "var(--text)" }}>{requestedBy}</strong> to move parenting time to <strong style={{ color: "var(--text)" }}>{requestedParent}</strong>.
+                        </div>
+                        {request.note && <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.35rem" }}>Reason: {request.note}</div>}
+                        {request.decision_note && <div style={{ fontSize: "0.74rem", color: statusColor, marginTop: "0.25rem" }}>Decision note: {request.decision_note}</div>}
+                      </div>
+                      {request.status === "pending" && canManage && (
+                        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                          <button onClick={() => void handleResolveSwapRequest(request.id, "approved")} disabled={resolvingSwapId === request.id} style={{ padding: "0.4rem 0.75rem", borderRadius: "8px", border: "1px solid rgba(34,197,94,0.25)", background: "rgba(34,197,94,0.08)", color: "#22c55e", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+                            {resolvingSwapId === request.id ? "Saving…" : "Approve"}
+                          </button>
+                          <button onClick={() => void handleResolveSwapRequest(request.id, "declined")} disabled={resolvingSwapId === request.id} style={{ padding: "0.4rem 0.75rem", borderRadius: "8px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.08)", color: "#f87171", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+                            {resolvingSwapId === request.id ? "Saving…" : "Decline"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {loaded && !schedule && !editing && (
         <div style={{ padding: "3rem 1rem", textAlign: "center", color: "var(--muted)", border: "1px dashed var(--border)", borderRadius: "16px" }}>
-          <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>📅</div>
+          <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>📆</div>
           <p style={{ fontWeight: 600, fontSize: "0.95rem", color: "var(--text)", marginBottom: "0.35rem" }}>No schedule yet</p>
           <p style={{ fontSize: "0.8rem", lineHeight: 1.6, maxWidth: "360px", margin: "0 auto 1.25rem" }}>
             Set up a recurring parenting schedule to track custody time, plan exchanges, and see who has the kids each day.
           </p>
-          <button onClick={() => setEditing(true)} style={{ padding: "0.7rem 1.75rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg,#06B6D4,#6366F1)", color: "white", fontSize: "0.875rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+          <button onClick={() => canManage && setEditing(true)} disabled={!canManage} style={{ padding: "0.7rem 1.75rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg,#06B6D4,#6366F1)", color: "white", fontSize: "0.875rem", fontWeight: 700, cursor: canManage ? "pointer" : "not-allowed", opacity: canManage ? 1 : 0.55, fontFamily: "'Inter',sans-serif" }}>
             Set up schedule
           </button>
         </div>

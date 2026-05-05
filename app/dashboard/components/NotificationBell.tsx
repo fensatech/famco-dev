@@ -1,10 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import type { Reminder } from "@/types"
+import type { HouseholdNotificationPreferences, Reminder } from "@/types"
 
 interface Props {
   reminders: Reminder[]
+  preferences?: HouseholdNotificationPreferences
   permission: NotificationPermission | "unsupported"
   onEnableDesktop: () => Promise<void>
   onDismiss: (id: string) => Promise<boolean>
@@ -39,6 +40,7 @@ function getReminderBuckets(reminders: Reminder[]) {
 
 export function NotificationBell({
   reminders,
+  preferences,
   permission,
   onEnableDesktop,
   onDismiss,
@@ -70,7 +72,9 @@ export function NotificationBell({
 
   const permissionLabel =
     permission === "granted"
-      ? "Desktop alerts on"
+      ? preferences?.browser_enabled === false
+        ? "Desktop alerts paused"
+        : "Desktop alerts on"
       : permission === "denied"
         ? "Desktop alerts blocked"
         : permission === "unsupported"
@@ -148,6 +152,11 @@ export function NotificationBell({
               <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
                 {permissionLabel}
               </div>
+              {preferences?.quiet_hours_enabled && preferences.quiet_hours_start && preferences.quiet_hours_end && (
+                <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.15rem" }}>
+                  Quiet hours {preferences.quiet_hours_start} - {preferences.quiet_hours_end}
+                </div>
+              )}
             </div>
             {permission !== "granted" && permission !== "unsupported" && (
               <button

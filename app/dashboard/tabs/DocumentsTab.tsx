@@ -34,9 +34,10 @@ interface Props {
   documents: DocumentRow[]
   memberOptions: CalendarMemberOption[]
   onDocumentsChange: (next: DocumentRow[]) => void
+  canManageDocuments?: boolean
 }
 
-export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Props) {
+export function DocumentsTab({ documents, memberOptions, onDocumentsChange, canManageDocuments = true }: Props) {
   const [title, setTitle] = useState("")
   const [category, setCategory] = useState<FamilyDocumentCategory>("school")
   const [memberName, setMemberName] = useState("Family")
@@ -45,14 +46,27 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState<FamilyDocumentCategory | "all">("all")
 
   const memberChoices = useMemo(
     () => ["Family", ...memberOptions.map((option) => option.name)].filter((name, index, list) => list.indexOf(name) === index),
     [memberOptions],
   )
 
+  const filteredDocuments = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return documents.filter((document) => {
+      if (categoryFilter !== "all" && document.category !== categoryFilter) return false
+      if (!query) return true
+      return [document.title, document.file_name, document.member_name, document.notes]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    })
+  }, [categoryFilter, documents, search])
+
   async function handleUpload() {
-    if (!file) return
+    if (!canManageDocuments || !file) return
     setUploading(true)
     setError(null)
     const formData = new FormData()
@@ -86,6 +100,7 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
   }
 
   async function handleDelete(id: string) {
+    if (!canManageDocuments) return
     setDeletingId(id)
     try {
       const res = await fetch(`/api/documents/${id}`, { method: "DELETE" })
@@ -117,6 +132,12 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
           </div>
         </div>
 
+        {!canManageDocuments && (
+          <div style={{ marginBottom: "1rem", borderRadius: "12px", padding: "0.8rem 0.9rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", color: "var(--muted)", fontSize: "0.76rem", lineHeight: 1.55 }}>
+            You have view-only access to the shared document vault. Only adults, co-parents, or the owner can upload or delete household files.
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.8fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
           <div>
             <label style={fieldLabelStyle}>Title</label>
@@ -147,7 +168,7 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
           </div>
           <div>
             <label style={fieldLabelStyle}>File</label>
-            <label style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: "0.45rem", marginTop: "0.25rem", minHeight: "88px", borderRadius: "14px", border: "1.5px dashed rgba(59,130,246,0.28)", background: "rgba(59,130,246,0.05)", padding: "1rem", cursor: "pointer" }}>
+            <label style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: "0.45rem", marginTop: "0.25rem", minHeight: "88px", borderRadius: "14px", border: "1.5px dashed rgba(59,130,246,0.28)", background: "rgba(59,130,246,0.05)", padding: "1rem", cursor: canManageDocuments ? "pointer" : "not-allowed", opacity: canManageDocuments ? 1 : 0.75 }}>
               <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#3b82f6" }}>{file ? file.name : "Click to browse or drop a file here"}</span>
               <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{file ? formatBytes(file.size) : "PDF, image, or document file"}</span>
               <input
@@ -156,6 +177,7 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
                 accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                 style={{ display: "none" }}
+                disabled={!canManageDocuments}
               />
             </label>
           </div>
@@ -165,9 +187,27 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
           <div style={{ fontSize: "0.76rem", color: error ? "#ef4444" : "var(--muted)" }}>
             {error ?? "Documents are stored per household, so invited members can see the same shared vault."}
           </div>
-          <button onClick={() => void handleUpload()} disabled={!file || uploading} style={{ ...savePillStyle, padding: "0.65rem 1.15rem", opacity: !file || uploading ? 0.55 : 1, cursor: !file || uploading ? "not-allowed" : "pointer" }}>
+          <button onClick={() => void handleUpload()} disabled={!canManageDocuments || !file || uploading} style={{ ...savePillStyle, padding: "0.65rem 1.15rem", opacity: !canManageDocuments || !file || uploading ? 0.55 : 1, cursor: !canManageDocuments || !file || uploading ? "not-allowed" : "pointer" }}>
             {uploading ? "Uploading…" : "Upload Document"}
           </button>
+        </div>
+      </div>
+
+      <div style={{ ...sectionCard, padding: "1rem 1.1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "0.75rem" }}>
+          <div>
+            <label style={fieldLabelStyle}>Search documents</label>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, member, notes, or filename…" style={{ ...inputSt, marginTop: "0.25rem" }} />
+          </div>
+          <div>
+            <label style={fieldLabelStyle}>Filter by category</label>
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as FamilyDocumentCategory | "all")} style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer" }}>
+              <option value="all">All categories</option>
+              {DOC_CATEGORIES.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -192,10 +232,15 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
             Start with a school form, insurance card, medical referral, or pet vaccination record so your household has one dependable place for important files.
           </div>
         </div>
+      ) : filteredDocuments.length === 0 ? (
+        <div style={{ ...sectionCard, padding: "1.6rem", textAlign: "center", color: "var(--muted)" }}>
+          No documents match this search right now.
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {documents.map((document) => {
+          {filteredDocuments.map((document) => {
             const categoryMeta = DOC_CATEGORIES.find((item) => item.value === document.category) ?? DOC_CATEGORIES[DOC_CATEGORIES.length - 1]
+            const canPreview = /^image\//.test(document.content_type ?? "") || document.file_name.toLowerCase().endsWith(".pdf")
             return (
               <div key={document.id} style={{ ...sectionCard, padding: "1rem 1.1rem" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "0.85rem", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -224,19 +269,31 @@ export function DocumentsTab({ documents, memberOptions, onDocumentsChange }: Pr
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {canPreview && (
+                      <a
+                        href={`/api/documents/${document.id}/preview`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ ...savePillStyle, background: "linear-gradient(135deg,#14b8a6,#3b82f6)", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                      >
+                        Preview
+                      </a>
+                    )}
                     <a
                       href={`/api/documents/${document.id}/download`}
                       style={{ ...savePillStyle, background: "linear-gradient(135deg,#3b82f6,#06b6d4)", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
                     >
                       Download
                     </a>
-                    <button
-                      onClick={() => void handleDelete(document.id)}
-                      disabled={deletingId === document.id}
-                      style={{ ...savePillStyle, background: "linear-gradient(135deg,#fb7185,#ef4444)", opacity: deletingId === document.id ? 0.6 : 1 }}
-                    >
-                      {deletingId === document.id ? "Deleting…" : "Delete"}
-                    </button>
+                    {canManageDocuments && (
+                      <button
+                        onClick={() => void handleDelete(document.id)}
+                        disabled={deletingId === document.id}
+                        style={{ ...savePillStyle, background: "linear-gradient(135deg,#fb7185,#ef4444)", opacity: deletingId === document.id ? 0.6 : 1 }}
+                      >
+                        {deletingId === document.id ? "Deleting…" : "Delete"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

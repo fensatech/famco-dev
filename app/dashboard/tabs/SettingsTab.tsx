@@ -1,7 +1,9 @@
 "use client"
 import { useState } from "react"
 import { FAMILY_TYPE_OPTIONS } from "@/types"
-import type { FamilyInvite, HouseholdMember } from "@/types"
+import type { FamilyInvite, HouseholdMember, HouseholdNotificationPreferences, HouseholdRole } from "@/types"
+import { canEditHousehold, canManageInvites } from "@/lib/permissions"
+import { REMINDER_OFFSET_OPTIONS } from "@/lib/reminders"
 import type { ProfileData, KidRow, PetRow } from "../types"
 import { memberColor } from "../lib/events"
 import { inputSt, fieldLabelStyle, fieldRowStyle, savePillStyle } from "../styles"
@@ -96,11 +98,25 @@ interface Props {
   setPets: (p: PetRow[]) => void
   invites: FamilyInvite[]
   householdMembers: HouseholdMember[]
+  currentHouseholdRole: HouseholdRole
+  notificationPreferences: HouseholdNotificationPreferences
   onInvite: (data: { invitee_email: string; invited_name?: string; relation: string; role: string }) => Promise<boolean>
   onRevokeInvite: (id: string) => Promise<boolean>
+  onSaveNotificationPreferences: (updates: Partial<Pick<
+    HouseholdNotificationPreferences,
+    | "browser_enabled"
+    | "quiet_hours_enabled"
+    | "quiet_hours_start"
+    | "quiet_hours_end"
+    | "default_event_offset_minutes"
+    | "default_task_offset_minutes"
+    | "default_school_offset_minutes"
+    | "default_bill_offset_minutes"
+    | "default_coparenting_offset_minutes"
+  >>) => Promise<boolean>
 }
 
-export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets, invites, householdMembers, onInvite, onRevokeInvite }: Props) {
+export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets, invites, householdMembers, currentHouseholdRole, notificationPreferences, onInvite, onRevokeInvite, onSaveNotificationPreferences }: Props) {
   const [draft, setDraft] = useState({
     firstName: initialProfile.firstName, lastName: initialProfile.lastName,
     phone: initialProfile.phone, familyType: initialProfile.familyType,
@@ -116,17 +132,33 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
   const [editPets, setEditPets] = useState<EditPet[]>(pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed ?? "", dob: p.dob ?? "" })))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [prefSaving, setPrefSaving] = useState(false)
+  const [prefSaved, setPrefSaved] = useState(false)
   const [inviteDraft, setInviteDraft] = useState({ invited_name: "", invitee_email: "", relation: "family_member", role: "member" })
   const [inviteSaving, setInviteSaving] = useState(false)
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null)
+  const [notificationDraft, setNotificationDraft] = useState({
+    browser_enabled: notificationPreferences.browser_enabled,
+    quiet_hours_enabled: notificationPreferences.quiet_hours_enabled,
+    quiet_hours_start: notificationPreferences.quiet_hours_start ?? "22:00",
+    quiet_hours_end: notificationPreferences.quiet_hours_end ?? "07:00",
+    default_event_offset_minutes: notificationPreferences.default_event_offset_minutes,
+    default_task_offset_minutes: notificationPreferences.default_task_offset_minutes,
+    default_school_offset_minutes: notificationPreferences.default_school_offset_minutes,
+    default_bill_offset_minutes: notificationPreferences.default_bill_offset_minutes,
+    default_coparenting_offset_minutes: notificationPreferences.default_coparenting_offset_minutes,
+  })
 
   const hasSpouse = draft.familyType !== "single_parent"
   const countryHint = draft.addressCountry || "Canada"
+  const canEdit = canEditHousehold(currentHouseholdRole)
+  const canInvite = canManageInvites(currentHouseholdRole)
   function sf<K extends keyof typeof draft>(key: K, val: (typeof draft)[K]) { setDraft((p) => ({ ...p, [key]: val })) }
   function sk(i: number, key: keyof EditKid, val: string) { setEditKids((prev) => prev.map((k, idx) => idx === i ? { ...k, [key]: val } : k)) }
   function sp(i: number, key: keyof EditPet, val: string) { setEditPets((prev) => prev.map((p, idx) => idx === i ? { ...p, [key]: val } : p)) }
 
   async function handleInvite() {
+    if (!canInvite) return
     if (!inviteDraft.invitee_email.trim()) return
     setInviteSaving(true)
     const ok = await onInvite({
@@ -147,6 +179,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
   }
 
   async function saveAll() {
+    if (!canEdit) return
     if (!draft.city.trim() || !draft.timezone) return
     setSaving(true)
     const validKids = editKids.filter((k) => k.firstName.trim() || k.lastName.trim())
@@ -181,6 +214,27 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 3000)
   }
 
+  async function saveNotificationPreferences() {
+    if (!canEdit) return
+    setPrefSaving(true)
+    const ok = await onSaveNotificationPreferences({
+      browser_enabled: notificationDraft.browser_enabled,
+      quiet_hours_enabled: notificationDraft.quiet_hours_enabled,
+      quiet_hours_start: notificationDraft.quiet_hours_enabled ? notificationDraft.quiet_hours_start : null,
+      quiet_hours_end: notificationDraft.quiet_hours_enabled ? notificationDraft.quiet_hours_end : null,
+      default_event_offset_minutes: notificationDraft.default_event_offset_minutes,
+      default_task_offset_minutes: notificationDraft.default_task_offset_minutes,
+      default_school_offset_minutes: notificationDraft.default_school_offset_minutes,
+      default_bill_offset_minutes: notificationDraft.default_bill_offset_minutes,
+      default_coparenting_offset_minutes: notificationDraft.default_coparenting_offset_minutes,
+    })
+    setPrefSaving(false)
+    if (ok) {
+      setPrefSaved(true)
+      window.setTimeout(() => setPrefSaved(false), 2500)
+    }
+  }
+
   const parentName = [draft.firstName, draft.lastName].filter(Boolean).join(" ") || "You"
   const spouseName = [draft.spouseFirstName, draft.spouseLastName].filter(Boolean).join(" ") || "Partner"
 
@@ -191,10 +245,78 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
           <h2 style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginBottom: "0.2rem" }}>Manage Family</h2>
           <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>This is how Famco learns your family. Names, schools, activities, and work schedules train the AI — the more complete your profile, the more relevant your Insights, smarter email scanning, and accurate reminders.</p>
         </div>
-        <button onClick={saveAll} disabled={saving || !draft.city.trim() || !draft.timezone} style={{ ...savePillStyle, padding: "0.65rem 1.75rem", fontSize: "0.875rem", background: saved ? "linear-gradient(135deg,#4ade80,#22c55e)" : saving ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)" }}>
+        <button onClick={saveAll} disabled={!canEdit || saving || !draft.city.trim() || !draft.timezone} style={{ ...savePillStyle, padding: "0.65rem 1.75rem", fontSize: "0.875rem", background: saved ? "linear-gradient(135deg,#4ade80,#22c55e)" : saving ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)", opacity: !canEdit ? 0.55 : 1, cursor: !canEdit ? "not-allowed" : "pointer" }}>
           {saving ? "Saving…" : saved ? "✓ Saved" : "Save Changes"}
         </button>
+        <SettingsSection title="Notification Preferences" icon="🔔" accent="#14b8a6" bg="rgba(20,184,166,0.07)">
+          <p style={{ fontSize: "0.78rem", color: "var(--muted)", lineHeight: 1.6 }}>
+            Set household defaults once, then let Famco apply them across events, tasks, school items, bills, and co-parenting reminders. Quiet hours only suppress desktop/browser alerts — in-app reminders still appear when you open Famco.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: "0.75rem" }}>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: "14px", padding: "1rem" }}>
+              <div style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--text)", marginBottom: "0.45rem" }}>Desktop notifications</div>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.55rem", fontSize: "0.78rem", color: "var(--muted)" }}>
+                <input type="checkbox" checked={notificationDraft.browser_enabled} onChange={(e) => setNotificationDraft((prev) => ({ ...prev, browser_enabled: e.target.checked }))} />
+                Allow browser alerts when reminders are due
+              </label>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: "14px", padding: "1rem" }}>
+              <div style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--text)", marginBottom: "0.45rem" }}>Quiet hours</div>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.55rem", fontSize: "0.78rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
+                <input type="checkbox" checked={notificationDraft.quiet_hours_enabled} onChange={(e) => setNotificationDraft((prev) => ({ ...prev, quiet_hours_enabled: e.target.checked }))} />
+                Pause desktop alerts overnight
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.55rem" }}>
+                <div>
+                  <label style={fieldLabelStyle}>Start</label>
+                  <input type="time" value={notificationDraft.quiet_hours_start} onChange={(e) => setNotificationDraft((prev) => ({ ...prev, quiet_hours_start: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", colorScheme: "dark", opacity: notificationDraft.quiet_hours_enabled ? 1 : 0.5 }} disabled={!notificationDraft.quiet_hours_enabled} />
+                </div>
+                <div>
+                  <label style={fieldLabelStyle}>End</label>
+                  <input type="time" value={notificationDraft.quiet_hours_end} onChange={(e) => setNotificationDraft((prev) => ({ ...prev, quiet_hours_end: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", colorScheme: "dark", opacity: notificationDraft.quiet_hours_enabled ? 1 : 0.5 }} disabled={!notificationDraft.quiet_hours_enabled} />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "0.75rem" }}>
+            {[
+              { key: "default_event_offset_minutes", label: "Calendar events" },
+              { key: "default_task_offset_minutes", label: "Tasks & chores" },
+              { key: "default_school_offset_minutes", label: "School items" },
+              { key: "default_bill_offset_minutes", label: "Bills & subscriptions" },
+              { key: "default_coparenting_offset_minutes", label: "Co-parenting handoffs" },
+            ].map((item) => (
+              <div key={item.key}>
+                <label style={fieldLabelStyle}>{item.label}</label>
+                <select
+                  value={String(notificationDraft[item.key as keyof typeof notificationDraft])}
+                  onChange={(e) => setNotificationDraft((prev) => ({ ...prev, [item.key]: Number(e.target.value) }))}
+                  style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer" }}
+                >
+                  {REMINDER_OFFSET_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+              These defaults are used when new tasks, events, and household alerts are created.
+            </div>
+            <button onClick={() => void saveNotificationPreferences()} disabled={!canEdit || prefSaving} style={{ ...savePillStyle, opacity: !canEdit || prefSaving ? 0.55 : 1, cursor: !canEdit ? "not-allowed" : "pointer", background: prefSaved ? "linear-gradient(135deg,#22c55e,#14b8a6)" : undefined }}>
+              {prefSaving ? "Saving…" : prefSaved ? "✓ Preferences saved" : "Save notification preferences"}
+            </button>
+          </div>
+        </SettingsSection>
+
       </div>
+
+      {!canEdit && (
+        <div style={{ marginBottom: "1.25rem", borderRadius: "14px", border: "1px solid rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.08)", padding: "0.9rem 1rem", color: "var(--muted)", fontSize: "0.78rem", lineHeight: 1.55 }}>
+          You currently have <strong style={{ color: "var(--text)" }}>{currentHouseholdRole.replace("_", " ")}</strong> access. You can review household details here, but only adults, co-parents, or the owner can save family settings.
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
 
@@ -291,10 +413,15 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                 <option value="co_parent">Co-parent</option>
               </select>
             </div>
-            <button onClick={() => void handleInvite()} disabled={inviteSaving || !inviteDraft.invitee_email.trim()} style={{ ...savePillStyle, alignSelf: "stretch", minWidth: "110px" }}>
+            <button onClick={() => void handleInvite()} disabled={!canInvite || inviteSaving || !inviteDraft.invitee_email.trim()} style={{ ...savePillStyle, alignSelf: "stretch", minWidth: "110px", opacity: !canInvite ? 0.55 : 1, cursor: !canInvite ? "not-allowed" : "pointer" }}>
               {inviteSaving ? "Sending…" : "Invite"}
             </button>
           </div>
+          {!canInvite && (
+            <div style={{ fontSize: "0.74rem", color: "var(--muted)" }}>
+              Only the household owner can send or revoke invites.
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
             {invites.length === 0 ? (
               <div style={{ padding: "0.9rem 1rem", borderRadius: "12px", border: "1px dashed rgba(255,255,255,0.08)", color: "var(--muted)", fontSize: "0.76rem" }}>
@@ -312,7 +439,7 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
                   </div>
                   <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.18rem" }}>{invite.invitee_email}</div>
                 </div>
-                {invite.status === "pending" && (
+                {invite.status === "pending" && canInvite && (
                   <>
                     <button onClick={() => void copyInviteLink(invite)} style={{ borderRadius: "8px", border: "1px solid rgba(34,197,94,0.25)", background: "rgba(34,197,94,0.08)", color: "#22c55e", fontSize: "0.72rem", fontWeight: 700, padding: "0.4rem 0.75rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
                       {copiedInviteId === invite.id ? "Copied" : "Copy link"}
