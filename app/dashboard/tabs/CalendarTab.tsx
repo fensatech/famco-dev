@@ -578,12 +578,12 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
               <button onClick={() => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d) }} style={navArrow}>→</button>
             </div>
             <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: calendarShellBg }}>
-              <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,1fr)", background: calendarHeaderBg, borderBottom: "1px solid var(--border)", position: "sticky", top: 0, zIndex: 5 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,minmax(0,1fr))", background: calendarHeaderBg, borderBottom: "1px solid var(--border)", position: "sticky", top: 0, zIndex: 5 }}>
                 <div />
                 {days.map((day) => {
                   const ds = day.toISOString().split("T")[0]; const isToday = ds === today
                   return (
-                    <div key={ds} style={{ textAlign: "center", padding: "0.5rem 0.25rem", borderLeft: "1px solid var(--border)" }}>
+                    <div key={ds} style={{ textAlign: "center", padding: "0.5rem 0.25rem", borderLeft: "1px solid var(--border)", minWidth: 0 }}>
                       <div style={{ fontSize: "0.6rem", color: isToday ? "#4f46e5" : "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{day.toLocaleDateString("en-GB", { weekday: "short" })}</div>
                       <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.1rem" }}>
                         <span style={isToday ? { background: "linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius: "50%", width: "30px", height: "30px", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "0.95rem", boxShadow: "0 10px 22px rgba(99,102,241,0.22)" } : { color: "var(--text)" }}>{day.getDate()}</span>
@@ -592,14 +592,14 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   )
                 })}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,1fr)", borderBottom: "2px solid var(--border)", minHeight: "28px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,minmax(0,1fr))", borderBottom: "2px solid var(--border)", minHeight: "28px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0.2rem 0.5rem 0.2rem 0", fontSize: "0.58rem", color: "var(--muted)" }}>all day</div>
                 {days.map((day) => {
                   const ds = day.toISOString().split("T")[0]
                   const allDay = showEvs ? gcalEventsForDate(ds).filter((e) => e.allDay) : []
                   const allDayTasks = showTasks ? tasksForDate(ds).filter((t) => !t.due_time) : []
                   return (
-                    <div key={ds} style={{ borderLeft: "1px solid var(--border)", padding: "0.125rem 0.2rem" }}>
+                      <div key={ds} style={{ borderLeft: "1px solid var(--border)", padding: "0.125rem 0.2rem", minWidth: 0 }}>
                       {allDay.map((ev) => (
                         <div key={ev.id ?? ev.title} onClick={() => openGcalModal(ev)} style={{ fontSize: "0.62rem", background: "rgba(99,102,241,0.2)", borderLeft: "2px solid #818cf8", borderRadius: "3px", padding: "0.1rem 0.3rem", color: "#818cf8", cursor: "pointer", marginBottom: "1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{ev.title}</div>
                       ))}
@@ -617,7 +617,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                 </div>
               )}
               <div style={{ overflowY: "auto", maxHeight: "540px", display: hasTimedEntries ? undefined : "none" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,1fr)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,minmax(0,1fr))" }}>
                   <div>
                     {HOURS.map((h, i) => {
                       const hh = hourH(h)
@@ -637,7 +637,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                     const scEvs = showEvs ? filteredScanned(scannedForDate(ds)).filter((e) => !!e.start_time) : []
                     const timedTasks = showTasks ? tasksForDate(ds).filter((t) => !!t.due_time) : []
                     return (
-                      <div key={ds} style={{ position: "relative", borderLeft: "1px solid var(--border)", height: totalH, background: isToday ? "rgba(99,102,241,0.05)" : "transparent" }}>
+                      <div key={ds} style={{ position: "relative", borderLeft: "1px solid var(--border)", height: totalH, background: isToday ? "rgba(99,102,241,0.05)" : "transparent", minWidth: 0 }}>
                         {HOURS.map((h) => (
                           <div key={h} style={{ position: "absolute", top: toY(`${h}:00`), left: 0, right: 0, borderTop: hourH(h) >= HOUR_H ? "1px solid rgba(255,255,255,0.04)" : "none", pointerEvents: "none" }} />
                         ))}
@@ -690,17 +690,17 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
             <button onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))} style={navArrow}>→</button>
           </div>
           <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: calendarShellBg }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", background: calendarHeaderBg }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", background: calendarHeaderBg }}>
               {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d) => (
-                <div key={d} style={{ padding: "0.5rem 0.375rem", fontSize: "0.7rem", color: "#4b5563", fontWeight: 700, borderRight: "1px solid var(--border)", textAlign: "center" }}>{d}</div>
+                <div key={d} style={{ padding: "0.5rem 0.375rem", fontSize: "0.7rem", color: "#4b5563", fontWeight: 700, borderRight: "1px solid var(--border)", textAlign: "center", minWidth: 0 }}>{d}</div>
               ))}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))" }}>
               {(() => {
                 const days = getMonthDays()
                 while (days.length % 7 !== 0) days.push(null)
                 return days.map((day, idx) => {
-                  if (!day) return <div key={idx} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", background: calendarMutedCellBg }} />
+                  if (!day) return <div key={idx} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", background: calendarMutedCellBg, minWidth: 0 }} />
                   const ds = day.toISOString().split("T")[0]
                   const isToday = ds === today
                   const isCurMonth = day.getMonth() === monthDate.getMonth()
@@ -716,14 +716,14 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   const visible = allEvs.slice(0, LIMIT)
                   const overflow = allEvs.length - LIMIT
                   return (
-                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? "transparent" : calendarMutedCellBg }}>
+                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? "transparent" : calendarMutedCellBg, minWidth: 0 }}>
                       <div style={{ marginBottom: "0.25rem" }}>
                         <span style={{ display: "inline-flex", width: "22px", height: "22px", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: isToday ? "#6366f1" : "transparent", color: isToday ? "#fff" : isCurMonth ? "var(--text)" : "var(--muted)", fontSize: "0.75rem", fontWeight: isToday ? 700 : 400 }}>{day.getDate()}</span>
                       </div>
                       {visible.map((item) => (
-                        <div key={item.key} onClick={item.onClick} style={{ display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.6rem", padding: "0.1rem 0.25rem", marginBottom: "0.15rem", borderRadius: "3px", background: `${item.color}18`, borderLeft: `2px solid ${item.color}`, color: item.color, cursor: item.onClick ? "pointer" : "default", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                        <div key={item.key} onClick={item.onClick} style={{ display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.6rem", padding: "0.1rem 0.25rem", marginBottom: "0.15rem", borderRadius: "3px", background: `${item.color}18`, borderLeft: `2px solid ${item.color}`, color: item.color, cursor: item.onClick ? "pointer" : "default", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", minWidth: 0 }}>
                           {item.time && <span style={{ flexShrink: 0, fontWeight: 700 }}>{fmtTime(item.time)}</span>}
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{item.label}</span>
                         </div>
                       ))}
                       {overflow > 0 && <div style={{ fontSize: "0.58rem", color: "#6366f1", fontWeight: 600, padding: "0.05rem 0.25rem" }}>+{overflow} more</div>}
