@@ -815,6 +815,10 @@ interface Props {
   reminderDefaults: HouseholdNotificationPreferences
 }
 
+function supportsInboxSync(provider: string) {
+  return provider === "google" || provider === "microsoft-entra-id"
+}
+
 export function InsightsTab({
   scannedEvents,
   insightActions,
@@ -841,6 +845,7 @@ export function InsightsTab({
   const [addedAsReminder, setAddedAsReminder] = useState<Set<string>>(new Set())
   const actionsById = new Map(insightActions.map((action) => [action.scanned_event_id, action]))
   const canManageInsights = canEditHousehold(role)
+  const canScanInbox = supportsInboxSync(provider)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -1161,7 +1166,7 @@ export function InsightsTab({
           >
             {sortOrder === "newest" ? "Newest first" : "Oldest first"}
           </button>
-          {provider === "google" && (
+          {canScanInbox && (
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -1339,7 +1344,7 @@ export function InsightsTab({
             Famco reads your email to surface school events, appointments, activities, bills, and subscriptions
             in one place automatically.
           </p>
-          {provider === "google" && (
+          {canScanInbox && (
             <button
               onClick={handleRefresh}
               disabled={refreshing}

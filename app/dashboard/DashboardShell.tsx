@@ -262,6 +262,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
   const { showWarning, dismiss } = useSessionTimeout()
   const { refreshInsights } = useInsightsRefresh({
     provider,
+    initialInsightsCount: initialScannedEvents.length,
     onScannedEventsUpdate: setScannedEvents,
     onFactsUpdate: setFacts,
   })

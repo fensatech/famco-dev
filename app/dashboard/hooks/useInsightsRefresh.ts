@@ -1,25 +1,21 @@
 "use client"
-import { useEffect } from "react"
+import { useCallback, useEffect } from "react"
 import type { ScannedEventRow } from "../types"
 import type { FamilyFact } from "@/types"
 
 interface InsightsRefreshOptions {
   provider: string
+  initialInsightsCount: number
   onScannedEventsUpdate: (events: ScannedEventRow[]) => void
   onFactsUpdate: (facts: FamilyFact[]) => void
 }
 
-export function useInsightsRefresh({ provider, onScannedEventsUpdate, onFactsUpdate }: InsightsRefreshOptions) {
-  useEffect(() => {
-    if (provider !== "google") return
-    const key = "famco_scan_done"
-    if (sessionStorage.getItem(key)) return
-    sessionStorage.setItem(key, "1")
-    fetch("/api/emails/scan", { method: "POST" }).catch(() => {})
-  }, [provider])
+function supportsInboxSync(provider: string) {
+  return provider === "google" || provider === "microsoft-entra-id"
+}
 
-  async function refreshInsights(): Promise<{ error?: string }> {
-    sessionStorage.removeItem("famco_scan_done")
+export function useInsightsRefresh({ provider, initialInsightsCount, onScannedEventsUpdate, onFactsUpdate }: InsightsRefreshOptions) {
+  const runInsightsSync = useCallback(async (): Promise<{ error?: string }> => {
     try {
       const res = await fetch("/api/emails/scan", { method: "POST" })
       if (res.status === 401) return { error: "token_expired" }
@@ -44,6 +40,25 @@ export function useInsightsRefresh({ provider, onScannedEventsUpdate, onFactsUpd
     } catch {
       return { error: "network_error" }
     }
+  }, [onFactsUpdate, onScannedEventsUpdate])
+
+  useEffect(() => {
+    if (!supportsInboxSync(provider) || initialInsightsCount > 0) return
+    const key = "famco_scan_done"
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, "pending")
+    void runInsightsSync().then((result) => {
+      if (result.error) {
+        sessionStorage.removeItem(key)
+        return
+      }
+      sessionStorage.setItem(key, "1")
+    })
+  }, [initialInsightsCount, provider, runInsightsSync])
+
+  async function refreshInsights(): Promise<{ error?: string }> {
+    sessionStorage.removeItem("famco_scan_done")
+    return runInsightsSync()
   }
 
   return { refreshInsights }
