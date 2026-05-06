@@ -277,10 +277,12 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
     if (ok) setShowAddEvent(false)
   }
 
-  const calendarShellBg = "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,249,255,0.96))"
-  const calendarHeaderBg = "linear-gradient(180deg, rgba(241,245,255,0.96), rgba(234,239,252,0.92))"
-  const calendarMutedCellBg = "rgba(148,163,184,0.06)"
-  const calendarTodayBg = "rgba(99,102,241,0.06)"
+  const calendarShellBg = "linear-gradient(180deg, rgba(251,252,255,0.98), rgba(237,242,255,0.96))"
+  const calendarHeaderBg = "linear-gradient(180deg, rgba(221,228,250,0.98), rgba(232,238,252,0.95))"
+  const calendarMutedCellBg = "rgba(203,213,225,0.24)"
+  const calendarCurrentCellBg = "rgba(255,255,255,0.82)"
+  const calendarTodayBg = "rgba(99,102,241,0.12)"
+  const calendarPanelBg = "linear-gradient(180deg, rgba(255,255,255,0.82), rgba(241,245,255,0.88))"
 
   return (
     <>
@@ -378,11 +380,11 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
         )
       })()}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+      <div style={{ marginBottom: "1.5rem", padding: "1.2rem 1.25rem", borderRadius: "24px", background: calendarPanelBg, border: "1px solid rgba(99,102,241,0.12)", boxShadow: "0 18px 42px rgba(99,102,241,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
         <h2 style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "'Outfit',sans-serif" }}>Calendar</h2>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           {(["day","week","month"] as CalView[]).map((v) => (
-            <button key={v} onClick={() => setView(v)} style={{ padding: "0.4rem 0.875rem", borderRadius: "8px", border: "none", cursor: "pointer", background: view === v ? "linear-gradient(135deg,#34d399,#059669)" : "rgba(255,255,255,0.06)", color: view === v ? "#fff" : "var(--muted)", fontSize: "0.8rem", fontWeight: view === v ? 700 : 400, fontFamily: "'Inter',sans-serif", textTransform: "capitalize" }}>{v}</button>
+            <button key={v} onClick={() => setView(v)} style={{ padding: "0.4rem 0.875rem", borderRadius: "999px", border: view === v ? "none" : "1px solid rgba(99,102,241,0.14)", cursor: "pointer", background: view === v ? "linear-gradient(135deg,#34d399,#059669)" : "rgba(255,255,255,0.78)", color: view === v ? "#fff" : "#667085", fontSize: "0.8rem", fontWeight: view === v ? 700 : 600, fontFamily: "'Inter',sans-serif", textTransform: "capitalize", boxShadow: view === v ? "0 10px 22px rgba(52,211,153,0.22)" : "none" }}>{v}</button>
           ))}
           <button onClick={() => { if (!readOnly) { setShowImport(true); setImportResult(null) } }} disabled={readOnly} style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "8px", padding: "0.4rem 0.75rem", color: "#818cf8", fontSize: "0.78rem", cursor: readOnly ? "not-allowed" : "pointer", opacity: readOnly ? 0.55 : 1, fontFamily: "'Inter',sans-serif" }}>↑ Import .ics</button>
           <button onClick={() => !readOnly && setShowAddEvent(true)} disabled={readOnly} style={{ ...savePillStyle, marginLeft: "0.25rem", opacity: readOnly ? 0.55 : 1, cursor: readOnly ? "not-allowed" : "pointer" }}>+ Add</button>
@@ -425,7 +427,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
           {memberList.map((m) => {
             const active = m.name === "All" ? memberFilter === null : memberFilter === m.name
             return (
-              <button key={m.name} onClick={() => setMemberFilter(m.name === "All" ? null : m.name)} style={{ padding: "0.25rem 0.75rem", borderRadius: "20px", border: `1.5px solid ${active ? m.color : "rgba(255,255,255,0.1)"}`, background: active ? `${m.color}22` : "rgba(255,255,255,0.04)", color: active ? m.color : "var(--muted)", fontSize: "0.73rem", fontWeight: active ? 700 : 400, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+              <button key={m.name} onClick={() => setMemberFilter(m.name === "All" ? null : m.name)} style={{ padding: "0.3rem 0.82rem", borderRadius: "999px", border: `1.5px solid ${active ? m.color : "rgba(99,102,241,0.14)"}`, background: active ? `${m.color}18` : "rgba(255,255,255,0.78)", color: active ? m.color : "#667085", fontSize: "0.73rem", fontWeight: active ? 700 : 600, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
                 {m.name === "All" ? "All Members" : m.name}
               </button>
             )
@@ -434,10 +436,10 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
       )}
 
       {/* Type filter */}
-      <div style={{ display: "flex", gap: "0.375rem", marginBottom: "0.875rem", alignItems: "center" }}>
-        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 500, marginRight: "0.25rem" }}>Show:</span>
+      <div style={{ display: "flex", gap: "0.375rem", marginBottom: "0.875rem", alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600, marginRight: "0.25rem" }}>Show:</span>
         {([["all", "All"], ["events", "Events"], ["tasks", "Tasks"]] as const).map(([f, label]) => (
-          <button key={f} onClick={() => setTypeFilter(f)} style={{ padding: "0.2rem 0.7rem", borderRadius: "20px", border: "none", background: typeFilter === f ? (f === "tasks" ? "linear-gradient(135deg,#f472b6,#ec4899)" : f === "events" ? "linear-gradient(135deg,#34d399,#059669)" : "rgba(255,255,255,0.14)") : "rgba(255,255,255,0.04)", color: typeFilter === f ? "#fff" : "var(--muted)", fontSize: "0.73rem", fontWeight: typeFilter === f ? 700 : 400, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
+          <button key={f} onClick={() => setTypeFilter(f)} style={{ padding: "0.25rem 0.75rem", borderRadius: "999px", border: typeFilter === f ? "none" : "1px solid rgba(99,102,241,0.12)", background: typeFilter === f ? (f === "tasks" ? "linear-gradient(135deg,#f472b6,#ec4899)" : f === "events" ? "linear-gradient(135deg,#34d399,#059669)" : "linear-gradient(135deg,#818cf8,#6366f1)") : "rgba(255,255,255,0.78)", color: typeFilter === f ? "#fff" : "#667085", fontSize: "0.73rem", fontWeight: typeFilter === f ? 700 : 600, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>
             {label}
           </button>
         ))}
@@ -445,7 +447,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
 
       {/* Google Calendar status */}
       {provider === "google" && (
-        <div style={{ marginBottom: "1rem", fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.625rem" }}>
+        <div style={{ marginBottom: "1rem", fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.625rem", flexWrap: "wrap" }}>
           {gcalLoading && <span>⟳ Loading Google Calendar…</span>}
           {gcalError === "session_expired" && (
             <span style={{ color: "#fbbf24", display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -577,7 +579,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
               <span style={{ fontSize: "0.85rem", color: "var(--muted)", fontWeight: 500 }}>{weekLabel}</span>
               <button onClick={() => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d) }} style={navArrow}>→</button>
             </div>
-            <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: calendarShellBg }}>
+            <div style={{ border: "1px solid rgba(99,102,241,0.12)", borderRadius: "16px", overflow: "hidden", background: calendarShellBg, boxShadow: "0 16px 36px rgba(99,102,241,0.05)" }}>
               <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,minmax(0,1fr))", background: calendarHeaderBg, borderBottom: "1px solid var(--border)", position: "sticky", top: 0, zIndex: 5 }}>
                 <div />
                 {days.map((day) => {
@@ -689,7 +691,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
             <span style={{ fontSize: "1rem", fontWeight: 700 }}>{monthDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
             <button onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))} style={navArrow}>→</button>
           </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: calendarShellBg }}>
+          <div style={{ border: "1px solid rgba(99,102,241,0.12)", borderRadius: "16px", overflow: "hidden", background: calendarShellBg, boxShadow: "0 16px 36px rgba(99,102,241,0.05)" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", background: calendarHeaderBg }}>
               {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d) => (
                 <div key={d} style={{ padding: "0.5rem 0.375rem", fontSize: "0.7rem", color: "#4b5563", fontWeight: 700, borderRight: "1px solid var(--border)", textAlign: "center", minWidth: 0 }}>{d}</div>
@@ -716,7 +718,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   const visible = allEvs.slice(0, LIMIT)
                   const overflow = allEvs.length - LIMIT
                   return (
-                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? "transparent" : calendarMutedCellBg, minWidth: 0 }}>
+                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? calendarCurrentCellBg : calendarMutedCellBg, minWidth: 0 }}>
                       <div style={{ marginBottom: "0.25rem" }}>
                         <span style={{ display: "inline-flex", width: "22px", height: "22px", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: isToday ? "#6366f1" : "transparent", color: isToday ? "#fff" : isCurMonth ? "var(--text)" : "var(--muted)", fontSize: "0.75rem", fontWeight: isToday ? 700 : 400 }}>{day.getDate()}</span>
                       </div>
