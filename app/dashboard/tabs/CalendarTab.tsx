@@ -277,6 +277,11 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
     if (ok) setShowAddEvent(false)
   }
 
+  const calendarShellBg = "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,249,255,0.96))"
+  const calendarHeaderBg = "linear-gradient(180deg, rgba(241,245,255,0.96), rgba(234,239,252,0.92))"
+  const calendarMutedCellBg = "rgba(148,163,184,0.06)"
+  const calendarTodayBg = "rgba(99,102,241,0.06)"
+
   return (
     <>
       {readOnly && (
@@ -572,16 +577,16 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
               <span style={{ fontSize: "0.85rem", color: "var(--muted)", fontWeight: 500 }}>{weekLabel}</span>
               <button onClick={() => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d) }} style={navArrow}>→</button>
             </div>
-            <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: "rgba(255,255,255,0.02)" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,1fr)", background: "rgba(10,8,20,0.8)", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, zIndex: 5 }}>
+            <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: calendarShellBg }}>
+              <div style={{ display: "grid", gridTemplateColumns: "52px repeat(7,1fr)", background: calendarHeaderBg, borderBottom: "1px solid var(--border)", position: "sticky", top: 0, zIndex: 5 }}>
                 <div />
                 {days.map((day) => {
                   const ds = day.toISOString().split("T")[0]; const isToday = ds === today
                   return (
                     <div key={ds} style={{ textAlign: "center", padding: "0.5rem 0.25rem", borderLeft: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: "0.6rem", color: isToday ? "#34d399" : "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{day.toLocaleDateString("en-GB", { weekday: "short" })}</div>
+                      <div style={{ fontSize: "0.6rem", color: isToday ? "#4f46e5" : "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{day.toLocaleDateString("en-GB", { weekday: "short" })}</div>
                       <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.1rem" }}>
-                        <span style={isToday ? { background: "#34d399", borderRadius: "50%", width: "30px", height: "30px", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#000", fontSize: "0.95rem" } : { color: "var(--text)" }}>{day.getDate()}</span>
+                        <span style={isToday ? { background: "linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius: "50%", width: "30px", height: "30px", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "0.95rem", boxShadow: "0 10px 22px rgba(99,102,241,0.22)" } : { color: "var(--text)" }}>{day.getDate()}</span>
                       </div>
                     </div>
                   )
@@ -606,7 +611,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                 })}
               </div>
               {!hasTimedEntries && (
-                <div style={{ padding: "1.5rem 1rem", textAlign: "center", color: "var(--muted)", background: "rgba(255,255,255,0.02)" }}>
+                <div style={{ padding: "1.5rem 1rem", textAlign: "center", color: "var(--muted)", background: "rgba(255,255,255,0.78)" }}>
                   <p style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--text)", marginBottom: "0.25rem" }}>No timed events this week</p>
                   <p style={{ fontSize: "0.74rem", lineHeight: 1.55 }}>All-day items stay visible above, and the time grid will expand automatically once appointments or scheduled tasks are added.</p>
                 </div>
@@ -632,7 +637,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                     const scEvs = showEvs ? filteredScanned(scannedForDate(ds)).filter((e) => !!e.start_time) : []
                     const timedTasks = showTasks ? tasksForDate(ds).filter((t) => !!t.due_time) : []
                     return (
-                      <div key={ds} style={{ position: "relative", borderLeft: "1px solid var(--border)", height: totalH, background: isToday ? "rgba(52,211,153,0.025)" : "transparent" }}>
+                      <div key={ds} style={{ position: "relative", borderLeft: "1px solid var(--border)", height: totalH, background: isToday ? "rgba(99,102,241,0.05)" : "transparent" }}>
                         {HOURS.map((h) => (
                           <div key={h} style={{ position: "absolute", top: toY(`${h}:00`), left: 0, right: 0, borderTop: hourH(h) >= HOUR_H ? "1px solid rgba(255,255,255,0.04)" : "none", pointerEvents: "none" }} />
                         ))}
@@ -684,10 +689,10 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
             <span style={{ fontSize: "1rem", fontWeight: 700 }}>{monthDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
             <button onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))} style={navArrow}>→</button>
           </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", background: "rgba(10,8,20,0.8)" }}>
+          <div style={{ border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden", background: calendarShellBg }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", background: calendarHeaderBg }}>
               {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d) => (
-                <div key={d} style={{ padding: "0.5rem 0.375rem", fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600, borderRight: "1px solid var(--border)", textAlign: "center" }}>{d}</div>
+                <div key={d} style={{ padding: "0.5rem 0.375rem", fontSize: "0.7rem", color: "#4b5563", fontWeight: 700, borderRight: "1px solid var(--border)", textAlign: "center" }}>{d}</div>
               ))}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
@@ -695,7 +700,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                 const days = getMonthDays()
                 while (days.length % 7 !== 0) days.push(null)
                 return days.map((day, idx) => {
-                  if (!day) return <div key={idx} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.18)" }} />
+                  if (!day) return <div key={idx} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", background: calendarMutedCellBg }} />
                   const ds = day.toISOString().split("T")[0]
                   const isToday = ds === today
                   const isCurMonth = day.getMonth() === monthDate.getMonth()
@@ -711,7 +716,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   const visible = allEvs.slice(0, LIMIT)
                   const overflow = allEvs.length - LIMIT
                   return (
-                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? "rgba(99,102,241,0.06)" : isCurMonth ? "transparent" : "rgba(0,0,0,0.12)" }}>
+                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? "transparent" : calendarMutedCellBg }}>
                       <div style={{ marginBottom: "0.25rem" }}>
                         <span style={{ display: "inline-flex", width: "22px", height: "22px", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: isToday ? "#6366f1" : "transparent", color: isToday ? "#fff" : isCurMonth ? "var(--text)" : "var(--muted)", fontSize: "0.75rem", fontWeight: isToday ? 700 : 400 }}>{day.getDate()}</span>
                       </div>
