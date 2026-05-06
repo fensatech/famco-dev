@@ -92,6 +92,7 @@ type EditPet = { id: string; name: string; animalType: string; breed: string; do
 
 interface Props {
   profile: ProfileData
+  onProfileSaved: (profile: ProfileData) => void
   kids: KidRow[]
   setKids: (k: KidRow[]) => void
   pets: PetRow[]
@@ -116,7 +117,7 @@ interface Props {
   >>) => Promise<boolean>
 }
 
-export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setPets, invites, householdMembers, currentHouseholdRole, notificationPreferences, onInvite, onRevokeInvite, onSaveNotificationPreferences }: Props) {
+export function SettingsTab({ profile: initialProfile, onProfileSaved, kids, setKids, pets, setPets, invites, householdMembers, currentHouseholdRole, notificationPreferences, onInvite, onRevokeInvite, onSaveNotificationPreferences }: Props) {
   const [draft, setDraft] = useState({
     firstName: initialProfile.firstName, lastName: initialProfile.lastName,
     phone: initialProfile.phone, familyType: initialProfile.familyType,
@@ -209,6 +210,27 @@ export function SettingsTab({ profile: initialProfile, kids, setKids, pets, setP
         body: JSON.stringify({ pets: validPets.map((p) => ({ name: p.name.trim(), animal_type: p.animalType, breed: p.breed.trim() || null, dob: p.dob || null })) }),
       }).catch(() => {}),
     ])
+    onProfileSaved({
+      ...initialProfile,
+      firstName: draft.firstName,
+      lastName: draft.lastName,
+      phone: draft.phone,
+      familyType: draft.familyType,
+      city: draft.city,
+      timezone: draft.timezone,
+      spouseFirstName: draft.spouseFirstName,
+      spouseLastName: draft.spouseLastName,
+      spousePhone: draft.spousePhone,
+      spouseEmail: draft.spouseEmail,
+      addressStreet: draft.addressStreet,
+      addressProvince: draft.addressProvince,
+      addressPostal: draft.addressPostal,
+      addressCountry: draft.addressCountry,
+      workType: draft.workType,
+      workAddress: draft.workAddress,
+      spouseWorkType: draft.spouseWorkType,
+      spouseWorkAddress: draft.spouseWorkAddress,
+    })
     setKids(validKids.map((k) => ({ id: k.id, name: [k.firstName, k.lastName].filter(Boolean).join(" "), firstName: k.firstName || null, lastName: k.lastName || null, dob: k.dob || null, schoolName: k.schoolName || null, schoolAddress: k.schoolAddress || null, grade: k.grade || null, daycareName: k.daycareName || null, daycareAddress: k.daycareAddress || null })))
     setPets(validPets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed || null, dob: p.dob || null })))
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 3000)

@@ -773,6 +773,9 @@ interface Props {
   insightActions: ScannedEventAction[]
   assigneeOptions: string[]
   provider: string
+  canScanInbox: boolean
+  setupSummary: string
+  onOpenSetup: () => void
   onOpenBilling: () => void
   onRefresh: () => Promise<{ error?: string }>
   onAddEvent: (
@@ -824,6 +827,9 @@ export function InsightsTab({
   insightActions,
   assigneeOptions,
   provider,
+  canScanInbox,
+  setupSummary,
+  onOpenSetup,
   onOpenBilling,
   onRefresh,
   onAddEvent,
@@ -845,7 +851,7 @@ export function InsightsTab({
   const [addedAsReminder, setAddedAsReminder] = useState<Set<string>>(new Set())
   const actionsById = new Map(insightActions.map((action) => [action.scanned_event_id, action]))
   const canManageInsights = canEditHousehold(role)
-  const canScanInbox = supportsInboxSync(provider)
+  const inboxProviderSupported = supportsInboxSync(provider)
 
   async function handleRefresh() {
     setRefreshing(true)
@@ -1166,7 +1172,7 @@ export function InsightsTab({
           >
             {sortOrder === "newest" ? "Newest first" : "Oldest first"}
           </button>
-          {canScanInbox && (
+          {inboxProviderSupported && canScanInbox && (
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -1344,7 +1350,20 @@ export function InsightsTab({
             Famco reads your email to surface school events, appointments, activities, bills, and subscriptions
             in one place automatically.
           </p>
-          {canScanInbox && (
+          {!canScanInbox ? (
+            <button
+              onClick={onOpenSetup}
+              style={{
+                ...savePillStyle,
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                color: "#fff",
+                padding: "0.75rem 2rem",
+                fontSize: "0.875rem",
+              }}
+            >
+              Complete setup
+            </button>
+          ) : inboxProviderSupported ? (
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -1358,6 +1377,11 @@ export function InsightsTab({
             >
               {refreshing ? "Scanning..." : "Scan My Inbox"}
             </button>
+          ) : null}
+          {!canScanInbox && (
+            <p style={{ fontSize: "0.8rem", lineHeight: 1.65, maxWidth: "420px", margin: "1rem auto 0", color: "var(--muted)" }}>
+              Complete Manage Family to {setupSummary} for better results before Famco syncs your inbox automatically.
+            </p>
           )}
         </div>
       ) : section === "dashboard" ? (

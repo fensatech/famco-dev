@@ -24,10 +24,12 @@ import { CoParentingTab } from "./tabs/CoParentingTab"
 import { BillingTab } from "./tabs/BillingTab"
 import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride, CoParentingSwapRequest } from "./types"
 import { memberColor } from "./lib/events"
+import { getHouseholdSetupStatus } from "./lib/setup"
 
 export function DashboardShell({ currentProfileId: _currentProfileId, currentHouseholdRole, notificationPreferences: initialNotificationPreferences, profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion, isAdmin }: DashboardShellProps) {
   void _currentProfileId
   const [tab, setTab] = useState<Tab>("home")
+  const [profile, setProfile] = useState(initialProfile)
   const [events, setEvents] = useState<Event[]>(initialEvents)
   const [tasks, setTasks] = useState<Task[]>(initialTasks)
   const [kids, setKids] = useState<KidRow[]>(initialKids)
@@ -61,6 +63,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
   const canManageExpenseData = canManageExpenses(currentHouseholdRole)
   const canManageCoparentingData = canManageCoParenting(currentHouseholdRole)
   const canManageBillingData = canManageBilling(currentHouseholdRole)
+  const householdSetup = getHouseholdSetupStatus(profile, kids, pets)
 
   useEffect(() => {
     function resetDashboardState() {
@@ -68,7 +71,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
       setAddEventSignal(0)
       setAddTaskSignal(0)
       try {
-        sessionStorage.removeItem("famco_scan_done")
+        sessionStorage.removeItem("famco_initial_sync_done")
       } catch {}
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }))
     }
@@ -82,7 +85,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
 
     function handlePageHide() {
       try {
-        sessionStorage.removeItem("famco_scan_done")
+        sessionStorage.removeItem("famco_initial_sync_done")
       } catch {}
     }
 
@@ -262,7 +265,8 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
   const { showWarning, dismiss } = useSessionTimeout()
   const { refreshInsights } = useInsightsRefresh({
     provider,
-    initialInsightsCount: initialScannedEvents.length,
+    canAutoSync: householdSetup.readyForInboxSync,
+    initialInsightsCount: scannedEvents.length,
     onScannedEventsUpdate: setScannedEvents,
     onFactsUpdate: setFacts,
   })
@@ -282,8 +286,8 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
     ...householdMembers.map((member) => [member.first_name, member.last_name].filter(Boolean).join(" ")),
     ...kids.map((kid) => kid.name),
   ].map((name) => name.trim()).filter(Boolean).filter((name, index, list) => list.indexOf(name) === index)
-  const profileAdultName = [initialProfile.firstName, initialProfile.lastName].filter(Boolean).join(" ").trim()
-  const spouseName = [initialProfile.spouseFirstName, initialProfile.spouseLastName].filter(Boolean).join(" ").trim()
+  const profileAdultName = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim()
+  const spouseName = [profile.spouseFirstName, profile.spouseLastName].filter(Boolean).join(" ").trim()
   const adultMemberNames = [
     profileAdultName,
     ...householdMembers.map((member) => [member.first_name, member.last_name].filter(Boolean).join(" ").trim()),
@@ -503,13 +507,12 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
 
           {tab === "home" && (
             <HomeTab
-              firstName={initialProfile.firstName}
-              familyType={initialProfile.familyType}
-              city={initialProfile.city}
-              timezone={initialProfile.timezone}
+              firstName={profile.firstName}
               kids={kids}
               events={todayEvents}
               pendingTasks={pending}
+              setupChecklist={householdSetup.checklist}
+              setupSummary={householdSetup.summary}
               memberOptions={calendarMemberOptions}
               onAddEvent={addEvent}
               onAddTask={addTask}
@@ -574,6 +577,9 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
               insightActions={insightActions}
               assigneeOptions={assigneeOptions}
               provider={provider}
+              canScanInbox={householdSetup.readyForInboxSync}
+              setupSummary={householdSetup.summary}
+              onOpenSetup={() => setTab("settings")}
               onOpenBilling={() => setTab("billing")}
               onRefresh={refreshInsights}
               onAddEvent={addEvent}
@@ -588,7 +594,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
 
           {tab === "data" && (
             <DataMapTab
-              profile={initialProfile}
+              profile={profile}
               kids={kids}
               facts={facts}
               scannedEvents={scannedEvents}
@@ -646,7 +652,8 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
 
           {tab === "settings" && (
             <SettingsTab
-              profile={initialProfile}
+              profile={profile}
+              onProfileSaved={setProfile}
               kids={kids}
               setKids={setKids}
               pets={pets}

@@ -5,6 +5,7 @@ import type { FamilyFact } from "@/types"
 
 interface InsightsRefreshOptions {
   provider: string
+  canAutoSync: boolean
   initialInsightsCount: number
   onScannedEventsUpdate: (events: ScannedEventRow[]) => void
   onFactsUpdate: (facts: FamilyFact[]) => void
@@ -14,7 +15,7 @@ function supportsInboxSync(provider: string) {
   return provider === "google" || provider === "microsoft-entra-id"
 }
 
-export function useInsightsRefresh({ provider, initialInsightsCount, onScannedEventsUpdate, onFactsUpdate }: InsightsRefreshOptions) {
+export function useInsightsRefresh({ provider, canAutoSync, initialInsightsCount, onScannedEventsUpdate, onFactsUpdate }: InsightsRefreshOptions) {
   const runInsightsSync = useCallback(async (): Promise<{ error?: string }> => {
     try {
       const res = await fetch("/api/emails/scan", { method: "POST" })
@@ -43,8 +44,12 @@ export function useInsightsRefresh({ provider, initialInsightsCount, onScannedEv
   }, [onFactsUpdate, onScannedEventsUpdate])
 
   useEffect(() => {
+    const key = "famco_initial_sync_done"
+    if (!canAutoSync) {
+      sessionStorage.removeItem(key)
+      return
+    }
     if (!supportsInboxSync(provider) || initialInsightsCount > 0) return
-    const key = "famco_scan_done"
     if (sessionStorage.getItem(key)) return
     sessionStorage.setItem(key, "pending")
     void runInsightsSync().then((result) => {
@@ -54,10 +59,10 @@ export function useInsightsRefresh({ provider, initialInsightsCount, onScannedEv
       }
       sessionStorage.setItem(key, "1")
     })
-  }, [initialInsightsCount, provider, runInsightsSync])
+  }, [canAutoSync, initialInsightsCount, provider, runInsightsSync])
 
   async function refreshInsights(): Promise<{ error?: string }> {
-    sessionStorage.removeItem("famco_scan_done")
+    sessionStorage.removeItem("famco_initial_sync_done")
     return runInsightsSync()
   }
 
