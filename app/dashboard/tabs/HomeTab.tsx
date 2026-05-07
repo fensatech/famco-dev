@@ -24,7 +24,7 @@ interface Props {
   setupSummary: string
   memberOptions: CalendarMemberOption[]
   assigneeOptions: string[]
-  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null) => Promise<boolean>
   onAddTask: (title: string, dueDate?: string, dueTime?: string, notes?: string, assigneeName?: string, recurrence?: "daily" | "weekly" | "monthly", reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
   onToggleTask: (id: string, c: boolean) => void
   onDeleteTask: (id: string) => void
@@ -63,8 +63,8 @@ export function HomeTab({ firstName, kids, events, pendingTasks, reminders, setu
   const cpNextExchange = cpSchedule ? findNextExchange(cpSchedule, coparentingOverrides, today) : null
   const cpAssignedKids = kids.filter((k) => (cpSchedule?.kid_ids ?? []).includes(k.id))
 
-  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) {
-    const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes)
+  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null) {
+    const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes, recurrence)
     if (ok) setShowAddEvent(false)
   }
 

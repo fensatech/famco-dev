@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
 import { getCoParentingOverrides, getCoParentingSchedule, getHouseholdRole, resolveCoParentingSwapRequest } from "@/lib/db"
 import { canResolveSwapRequests } from "@/lib/permissions"
+import { sendEmail, swapResolvedHtml } from "@/lib/email"
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -28,5 +29,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const schedule = await getCoParentingSchedule(session.profileId)
   const overrides = schedule ? await getCoParentingOverrides(session.profileId, schedule.id) : []
+
+  // Notify co-parent of the decision
+  if (schedule?.coparent_email) {
+    void sendEmail(
+      schedule.coparent_email,
+      `Swap request ${status} — Famco`,
+      swapResolvedHtml({ date: request.requested_date, status, decisionNote: request.decision_note }),
+    )
+  }
+
   return NextResponse.json({ request, overrides })
 }

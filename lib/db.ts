@@ -238,6 +238,9 @@ export async function ensureRuntimeSchema() {
 
       CREATE INDEX IF NOT EXISTS coparenting_swap_requests_profile_idx
         ON coparenting_swap_requests (profile_id, status, requested_date DESC);
+
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS recurrence TEXT;
+      ALTER TABLE coparenting_schedules ADD COLUMN IF NOT EXISTS coparent_email TEXT;
     `)
 
     schemaEnsured = true
@@ -951,6 +954,7 @@ export interface Event {
   member_name: string | null
   reminder_offset_minutes: number | null
   source: string
+  recurrence: string | null
   created_at: string
 }
 
@@ -980,14 +984,15 @@ export async function createEvent(profileId: string, data: {
   member_name?: string | null
   reminder_offset_minutes?: number | null
   source?: string
+  recurrence?: string | null
 }): Promise<Event> {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
   const { rows } = await pool.query<Event>(
-    `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, reminder_offset_minutes, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    `INSERT INTO events (profile_id, title, event_date, start_time, end_time, description, member_name, reminder_offset_minutes, source, recurrence)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [householdRootId, data.title, data.event_date, data.start_time ?? null, data.end_time ?? null,
-     data.description ?? null, data.member_name ?? null, normalizeReminderOffsetMinutes(data.reminder_offset_minutes), data.source ?? "manual"]
+     data.description ?? null, data.member_name ?? null, normalizeReminderOffsetMinutes(data.reminder_offset_minutes), data.source ?? "manual", data.recurrence ?? null]
   )
   const event = rows[0]
   await syncEventReminder(event)
@@ -1841,6 +1846,7 @@ export interface CoParentingSchedule {
   parent_a_name: string
   parent_b_name: string
   kid_ids: string[]
+  coparent_email: string | null
   active: boolean
   created_at: string
 }
@@ -1877,6 +1883,7 @@ export async function upsertCoParentingSchedule(
     parent_a_name: string
     parent_b_name: string
     kid_ids: string[]
+    coparent_email?: string | null
   }
 ): Promise<CoParentingSchedule> {
   const pool = getPool()
@@ -1892,10 +1899,10 @@ export async function upsertCoParentingSchedule(
     const { rows } = await pool.query(
       `UPDATE coparenting_schedules SET
          schedule_type = $2, start_date = $3, exchange_time = $4, exchange_location = $5,
-         parent_a_name = $6, parent_b_name = $7, kid_ids = $8, updated_at = now()
+         parent_a_name = $6, parent_b_name = $7, kid_ids = $8, coparent_email = $9, updated_at = now()
        WHERE id = $1 RETURNING *`,
       [existing[0].id, data.schedule_type, data.start_date, data.exchange_time, data.exchange_location,
-       data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids)]
+       data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids), data.coparent_email ?? null]
     )
     const r = rows[0]
     return { ...r, start_date: String(r.start_date).slice(0, 10), kid_ids: Array.isArray(r.kid_ids) ? r.kid_ids : [] }
@@ -1904,10 +1911,10 @@ export async function upsertCoParentingSchedule(
   // No active schedule yet — insert a new one.
   const { rows } = await pool.query(
     `INSERT INTO coparenting_schedules
-       (profile_id, schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+       (profile_id, schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids, coparent_email)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
     [householdRootId, data.schedule_type, data.start_date, data.exchange_time, data.exchange_location,
-     data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids)]
+     data.parent_a_name, data.parent_b_name, JSON.stringify(data.kid_ids), data.coparent_email ?? null]
   )
   const r = rows[0]
   return { ...r, start_date: String(r.start_date).slice(0, 10), kid_ids: Array.isArray(r.kid_ids) ? r.kid_ids : [] }

@@ -1,7 +1,8 @@
 import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
-import { createCoParentingSwapRequest, getHouseholdRole } from "@/lib/db"
+import { createCoParentingSwapRequest, getCoParentingSchedule, getHouseholdRole } from "@/lib/db"
 import { canManageCoParenting } from "@/lib/permissions"
+import { sendEmail, swapCreatedHtml } from "@/lib/email"
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -23,6 +24,17 @@ export async function POST(req: NextRequest) {
     requested_to: body.requested_to === "a" ? "a" : "b",
     note: typeof body.note === "string" ? body.note.trim() || null : null,
   })
+
+  // Send email notification to co-parent if email is configured
+  const schedule = await getCoParentingSchedule(session.profileId)
+  if (schedule?.coparent_email) {
+    const requesterName = request.requested_by === "a" ? schedule.parent_a_name : schedule.parent_b_name
+    void sendEmail(
+      schedule.coparent_email,
+      "Custody swap request from Famco",
+      swapCreatedHtml({ requesterName, date: request.requested_date, note: request.note }),
+    )
+  }
 
   return NextResponse.json({ request }, { status: 201 })
 }

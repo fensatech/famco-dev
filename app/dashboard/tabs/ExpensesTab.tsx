@@ -98,6 +98,7 @@ export function ExpensesTab({ scannedEvents, canManageExpenses = true }: Props) 
   const [newAmount, setNewAmount] = useState("")
   const [newCategory, setNewCategory] = useState("Other")
   const [newDate, setNewDate] = useState(todayStr())
+  const [newNotes, setNewNotes] = useState("")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export function ExpensesTab({ scannedEvents, canManageExpenses = true }: Props) 
     const res = await fetch("/api/expenses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle.trim(), amount: parseFloat(newAmount), category: newCategory, expense_date: newDate }),
+      body: JSON.stringify({ title: newTitle.trim(), amount: parseFloat(newAmount), category: newCategory, expense_date: newDate, notes: newNotes.trim() || null }),
     })
     if (res.ok) {
       const { expense } = await res.json()
@@ -122,6 +123,7 @@ export function ExpensesTab({ scannedEvents, canManageExpenses = true }: Props) 
       setNewAmount("")
       setNewCategory("Other")
       setNewDate(todayStr())
+      setNewNotes("")
       setShowAdd(false)
     }
     setSaving(false)
@@ -199,6 +201,10 @@ export function ExpensesTab({ scannedEvents, canManageExpenses = true }: Props) 
                 <select value={newCategory} onChange={(event) => setNewCategory(event.target.value)} style={{ ...inputSt, marginTop: "0.3rem", cursor: "pointer" }}>
                   {EXPENSE_CATEGORIES.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
                 </select>
+              </div>
+              <div>
+                <label style={fieldLabelStyle}>Notes (optional)</label>
+                <input placeholder="e.g. Receipt #1234, reimbursable…" value={newNotes} onChange={(event) => setNewNotes(event.target.value)} style={{ ...inputSt, marginTop: "0.3rem" }} />
               </div>
             </div>
             <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.5rem" }}>

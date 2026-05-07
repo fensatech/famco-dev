@@ -22,7 +22,7 @@ interface Props {
   tasks: Task[]
   onDeleteEvent: (id: string) => void
   onUpdateEvent: (id: string, data: Partial<Event>) => void
-  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) => Promise<boolean>
+  onAddEvent: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null) => Promise<boolean>
   saving: boolean
   provider: string
   memberOptions: CalendarMemberOption[]
@@ -272,8 +272,8 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
     return dateTasks.filter((t) => (t.assignee_name ?? "").toLowerCase() === memberFilter.toLowerCase())
   }
 
-  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) {
-    const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes)
+  async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null) {
+    const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes, recurrence)
     if (ok) setShowAddEvent(false)
   }
 

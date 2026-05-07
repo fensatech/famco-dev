@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You have read-only access for co-parenting changes." }, { status: 403 })
   }
   const body = await req.json()
-  const { schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids } = body
+  const { schedule_type, start_date, exchange_time, exchange_location, parent_a_name, parent_b_name, kid_ids, coparent_email } = body
   if (!schedule_type || !start_date) return NextResponse.json({ error: "schedule_type and start_date are required" }, { status: 400 })
   const schedule = await upsertCoParentingSchedule(session.profileId, {
     schedule_type,
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     parent_a_name: parent_a_name || "Parent A",
     parent_b_name: parent_b_name || "Parent B",
     kid_ids: Array.isArray(kid_ids) ? kid_ids : [],
+    coparent_email: coparent_email || null,
   })
   const overrides = await getCoParentingOverrides(session.profileId, schedule.id)
   const swapRequests = await getCoParentingSwapRequests(session.profileId, schedule.id)

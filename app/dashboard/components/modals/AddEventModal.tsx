@@ -5,8 +5,15 @@ import type { CalendarMemberOption } from "../../types"
 import { inputSt, fieldLabelStyle } from "../../styles"
 import { todayStr } from "../../lib/date"
 
+const RECURRENCE_OPTIONS = [
+  { value: "", label: "No repeat" },
+  { value: "daily", label: "Daily (14 days)" },
+  { value: "weekly", label: "Weekly (26 weeks)" },
+  { value: "monthly", label: "Monthly (12 months)" },
+]
+
 interface Props {
-  onSave: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes) => void
+  onSave: (title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null) => void
   onCancel: () => void
   saving: boolean
   initialDate?: string
@@ -19,10 +26,11 @@ export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOpt
   const [time, setTime] = useState("")
   const [memberName, setMemberName] = useState("")
   const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<ReminderOffsetMinutes>(DEFAULT_REMINDER_OFFSET_MINUTES)
+  const [recurrence, setRecurrence] = useState("")
 
   function handleSave() {
     if (!title.trim() || !date) return
-    onSave(title.trim(), date, time || null, memberName || null, reminderOffsetMinutes)
+    onSave(title.trim(), date, time || null, memberName || null, reminderOffsetMinutes, recurrence || null)
   }
 
   return (
@@ -48,19 +56,29 @@ export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOpt
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem", colorScheme: "dark" }} />
             </div>
           </div>
-          <div>
-            <label style={fieldLabelStyle}>Reminder</label>
-            <select
-              value={String(reminderOffsetMinutes)}
-              onChange={(e) => setReminderOffsetMinutes(Number(e.target.value) as ReminderOffsetMinutes)}
-              style={{ ...inputSt, marginTop: "0.3rem", cursor: "pointer" }}
-            >
-              {REMINDER_OFFSET_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {getReminderOffsetLabel(option.value, "event", !!time)}
-                </option>
-              ))}
-            </select>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <div>
+              <label style={fieldLabelStyle}>Reminder</label>
+              <select
+                value={String(reminderOffsetMinutes)}
+                onChange={(e) => setReminderOffsetMinutes(Number(e.target.value) as ReminderOffsetMinutes)}
+                style={{ ...inputSt, marginTop: "0.3rem", cursor: "pointer" }}
+              >
+                {REMINDER_OFFSET_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {getReminderOffsetLabel(option.value, "event", !!time)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={fieldLabelStyle}>Repeat</label>
+              <select value={recurrence} onChange={(e) => setRecurrence(e.target.value)} style={{ ...inputSt, marginTop: "0.3rem", cursor: "pointer" }}>
+                {RECURRENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
           {memberOptions.length > 0 && (
             <div>
@@ -76,10 +94,15 @@ export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOpt
             </div>
           )}
         </div>
+        {recurrence && (
+          <p style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.625rem", background: "rgba(99,102,241,0.06)", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
+            {RECURRENCE_OPTIONS.find((o) => o.value === recurrence)?.label} — {recurrence === "daily" ? "14 events" : recurrence === "weekly" ? "26 events" : "12 events"} will be created starting {date || "the selected date"}.
+          </p>
+        )}
         <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.5rem" }}>
           <button onClick={onCancel} style={{ flex: 1, padding: "0.75rem", borderRadius: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.875rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Cancel</button>
           <button onClick={handleSave} disabled={saving || !title.trim() || !date} style={{ flex: 2, padding: "0.75rem", borderRadius: "10px", background: saving || !title.trim() || !date ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#c084fc)", border: "none", color: "white", fontSize: "0.875rem", fontWeight: 700, cursor: saving || !title.trim() || !date ? "not-allowed" : "pointer", fontFamily: "'Inter',sans-serif" }}>
-            {saving ? "Saving…" : "Add Event"}
+            {saving ? "Saving…" : recurrence ? "Add Series" : "Add Event"}
           </button>
         </div>
       </div>

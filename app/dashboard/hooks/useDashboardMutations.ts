@@ -25,16 +25,17 @@ export function useDashboardMutations({ setEvents, setTasks, setReminders, defau
     }
   }
 
-  async function addEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes): Promise<boolean> {
+  async function addEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null): Promise<boolean> {
     setSaving(true)
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null, reminder_offset_minutes: reminderOffsetMinutes ?? defaultEventOffsetMinutes }),
+      body: JSON.stringify({ title: title.trim(), event_date: date || todayStr(), start_time: time || null, member_name: memberName || null, reminder_offset_minutes: reminderOffsetMinutes ?? defaultEventOffsetMinutes, recurrence: recurrence || null }),
     })
     if (res.ok) {
-      const { event } = await res.json()
-      setEvents((prev) => [...prev, event].sort((a, b) => {
+      const { events: newEvents, event } = await res.json()
+      const eventsToAdd = Array.isArray(newEvents) ? newEvents : [event]
+      setEvents((prev) => [...prev, ...eventsToAdd].sort((a, b) => {
         if (a.event_date !== b.event_date) return (a.event_date ?? "") < (b.event_date ?? "") ? -1 : 1
         return (a.start_time ?? "99:99") < (b.start_time ?? "99:99") ? -1 : 1
       }))

@@ -28,6 +28,7 @@ interface ScheduleDraft {
   parent_a_name: string
   parent_b_name: string
   kid_ids: string[]
+  coparent_email: string
 }
 
 interface OverrideDraft {
@@ -93,6 +94,7 @@ export function CoParentingTab({
     parent_a_name: "Me",
     parent_b_name: "Co-parent",
     kid_ids: [],
+    coparent_email: "",
   })
   const [overrideDraft, setOverrideDraft] = useState<OverrideDraft>({ date: "", parent: "a", note: "" })
   const [showOverrideForm, setShowOverrideForm] = useState(false)
@@ -129,6 +131,7 @@ export function CoParentingTab({
         parent_a_name: schedule.parent_a_name,
         parent_b_name: schedule.parent_b_name,
         kid_ids: schedule.kid_ids,
+        coparent_email: schedule.coparent_email ?? "",
       })
     }
     setEditing(true)
@@ -151,6 +154,7 @@ export function CoParentingTab({
       parent_a_name: draft.parent_a_name || "Parent A",
       parent_b_name: draft.parent_b_name || "Parent B",
       kid_ids: draft.kid_ids,
+      coparent_email: draft.coparent_email || null,
     })
     setSaving(false)
     if (ok) setEditing(false)
@@ -381,6 +385,21 @@ export function CoParentingTab({
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.35rem" }}>Exchange Location (optional)</label>
               <input type="text" value={draft.exchange_location} onChange={(e) => setDraft((d) => ({ ...d, exchange_location: e.target.value }))} placeholder="e.g. School pickup, coffee shop on Main St" style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.35rem" }}>
+                Co-parent notification email (optional)
+              </label>
+              <input
+                type="email"
+                value={draft.coparent_email}
+                onChange={(e) => setDraft((d) => ({ ...d, coparent_email: e.target.value }))}
+                placeholder="e.g. other.parent@email.com"
+                style={{ width: "100%", padding: "0.625rem 0.875rem", borderRadius: "10px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "0.85rem", fontFamily: "'Inter',sans-serif", outline: "none", boxSizing: "border-box" }}
+              />
+              <p style={{ fontSize: "0.69rem", color: "var(--muted)", marginTop: "0.3rem" }}>
+                Famco will email this address when swap requests are created or resolved. Requires <code style={{ fontSize: "0.68rem" }}>RESEND_API_KEY</code> in your environment.
+              </p>
             </div>
           </div>
 
