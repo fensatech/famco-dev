@@ -169,6 +169,27 @@ export async function ensureRuntimeSchema() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS google_calendar_preferences (
+        profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+        visible BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS google_calendar_event_overrides (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        external_event_id TEXT NOT NULL,
+        member_name TEXT,
+        hidden BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (profile_id, external_event_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS google_calendar_event_overrides_profile_idx
+        ON google_calendar_event_overrides (profile_id, hidden, updated_at DESC);
+
       CREATE TABLE IF NOT EXISTS scanned_event_actions (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -568,6 +589,105 @@ export async function upsertNotificationPreferences(
   )
 
   return mapNotificationPreferences(rows[0])
+}
+
+export interface GoogleCalendarPreferences {
+  profile_id: string
+  visible: boolean
+}
+
+export interface GoogleCalendarEventOverride {
+  id: string
+  profile_id: string
+  external_event_id: string
+  member_name: string | null
+  hidden: boolean
+  created_at: string
+  updated_at: string
+}
+
+export async function getGoogleCalendarPreferences(profileId: string): Promise<GoogleCalendarPreferences> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await pool.query(
+    `INSERT INTO google_calendar_preferences (profile_id)
+     VALUES ($1)
+     ON CONFLICT (profile_id) DO NOTHING`,
+    [householdRootId],
+  )
+
+  const { rows } = await pool.query<GoogleCalendarPreferences>(
+    `SELECT profile_id, visible
+     FROM google_calendar_preferences
+     WHERE profile_id = $1`,
+    [householdRootId],
+  )
+
+  return rows[0] ?? { profile_id: householdRootId, visible: true }
+}
+
+export async function setGoogleCalendarVisibility(profileId: string, visible: boolean): Promise<GoogleCalendarPreferences> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<GoogleCalendarPreferences>(
+    `INSERT INTO google_calendar_preferences (profile_id, visible, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (profile_id) DO UPDATE
+       SET visible = EXCLUDED.visible,
+           updated_at = NOW()
+     RETURNING profile_id, visible`,
+    [householdRootId, visible],
+  )
+  return rows[0]
+}
+
+export async function getGoogleCalendarEventOverrides(profileId: string): Promise<GoogleCalendarEventOverride[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<GoogleCalendarEventOverride>(
+    `SELECT *
+     FROM google_calendar_event_overrides
+     WHERE profile_id = $1`,
+    [householdRootId],
+  )
+  return rows
+}
+
+export async function upsertGoogleCalendarEventOverride(
+  profileId: string,
+  externalEventId: string,
+  updates: {
+    member_name?: string | null
+    hidden?: boolean
+  },
+): Promise<GoogleCalendarEventOverride> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+
+  await pool.query(
+    `INSERT INTO google_calendar_event_overrides (profile_id, external_event_id)
+     VALUES ($1, $2)
+     ON CONFLICT (profile_id, external_event_id) DO NOTHING`,
+    [householdRootId, externalEventId],
+  )
+
+  const allowed = ["member_name", "hidden"] as const
+  const keys = allowed.filter((key) => key in updates)
+  const values = keys.map((key) => {
+    if (key === "hidden") return Boolean(updates.hidden)
+    return updates.member_name ?? null
+  })
+
+  const setClauses = keys.map((key, index) => `"${key}" = $${index + 3}`)
+  const { rows } = await pool.query<GoogleCalendarEventOverride>(
+    `UPDATE google_calendar_event_overrides
+     SET ${setClauses.length > 0 ? `${setClauses.join(", ")}, ` : ""}updated_at = NOW()
+     WHERE profile_id = $1 AND external_event_id = $2
+     RETURNING *`,
+    [householdRootId, externalEventId, ...values],
+  )
+
+  return rows[0]
 }
 
 export async function updateProfile(id: string, updates: Partial<Profile>) {

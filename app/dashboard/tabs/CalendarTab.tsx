@@ -1,5 +1,5 @@
 "use client"
-import { useState, useRef, useEffect } from "react"
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import { signOut } from "next-auth/react"
 import type { ReminderOffsetMinutes } from "@/lib/reminders"
 import type { Event, Task } from "@/lib/db"
@@ -131,6 +131,8 @@ function IcsImportModal({ memberOptions, importing, importResult, fileInputRef, 
 
 export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAddEvent, saving, provider, memberOptions, scannedEvents, gcalEvents, setGcalEvents, gcalLoaded, setGcalLoaded, onEventsRefresh, onOpenBilling, openSignal, coparentingSchedule, coparentingOverrides = [], readOnly = false }: Props) {
   const [showAddEvent, setShowAddEvent] = useState(false)
+  const [initialEventDate, setInitialEventDate] = useState<string | undefined>(undefined)
+  const [initialEventTime, setInitialEventTime] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<"all" | "events" | "tasks">("all")
   const [selectedCalTask, setSelectedCalTask] = useState<Task | null>(null)
   const [view, setView] = useState<CalView>("day")
@@ -140,6 +142,7 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
   const [monthDate, setMonthDate] = useState(() => new Date())
   const [gcalLoading, setGcalLoading] = useState(false)
   const [gcalError, setGcalError] = useState("")
+  const [gcalVisible, setGcalVisible] = useState(true)
   const [memberFilter, setMemberFilter] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -147,43 +150,147 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedGcalEvent, setSelectedGcalEvent] = useState<GCalEvent | null>(null)
   const [gcalEditMode, setGcalEditMode] = useState(false)
-  const [gcalDraft, setGcalDraft] = useState({ title: "", event_date: "", start_time: "", end_time: "" })
+  const [gcalDraft, setGcalDraft] = useState({ title: "", event_date: "", start_time: "", end_time: "", member_name: "" })
   const [gcalSaving, setGcalSaving] = useState(false)
 
+  const closeAddEvent = useCallback(() => {
+    setShowAddEvent(false)
+    setInitialEventDate(undefined)
+    setInitialEventTime(null)
+  }, [])
+
+  const openAddEventForDate = useCallback((date: string, time: string | null = null) => {
+    if (readOnly) return
+    setInitialEventDate(date)
+    setInitialEventTime(time)
+    setShowAddEvent(true)
+  }, [readOnly])
+
   useEffect(() => {
-    if (openSignal && !readOnly) { setShowAddEvent(true) }
-  }, [openSignal, readOnly])
+    if (openSignal && !readOnly) {
+      openAddEventForDate(todayStr(), null)
+    }
+  }, [openSignal, openAddEventForDate, readOnly])
 
   function openGcalModal(ev: GCalEvent) {
     if (readOnly) return
     const date = ev.start ? ev.start.split("T")[0] : todayStr()
     const startTime = !ev.allDay && ev.start?.includes("T") ? ev.start.split("T")[1]?.slice(0, 5) : ""
     const endTime = !ev.allDay && ev.end?.includes("T") ? ev.end.split("T")[1]?.slice(0, 5) : ""
-    setGcalDraft({ title: ev.title, event_date: date, start_time: startTime ?? "", end_time: endTime ?? "" })
+    setGcalDraft({ title: ev.title, event_date: date, start_time: startTime ?? "", end_time: endTime ?? "", member_name: ev.member_name ?? "" })
     setGcalEditMode(false)
     setSelectedGcalEvent(ev)
   }
 
-  function removeGcalEvent(ev: GCalEvent) {
-    setGcalEvents(gcalEvents.filter((e) => e.id !== ev.id))
+  function syncGcalEventLocally(eventId: string | null, updates: Partial<GCalEvent>) {
+    setGcalEvents(gcalEvents.map((event) => event.id === eventId ? { ...event, ...updates } : event))
+    setSelectedGcalEvent((current) => current?.id === eventId ? { ...current, ...updates } : current)
+  }
+
+  function removeGcalEventLocally(eventId: string | null) {
+    setGcalEvents(gcalEvents.filter((event) => event.id !== eventId))
     setSelectedGcalEvent(null)
     setGcalEditMode(false)
   }
 
-  async function saveGcalEdit() {
-    if (!gcalDraft.title.trim() || !gcalDraft.event_date) return
-    setGcalSaving(true)
-    const res = await fetch("/api/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: gcalDraft.title.trim(), event_date: gcalDraft.event_date, start_time: gcalDraft.start_time || null, end_time: gcalDraft.end_time || null, description: selectedGcalEvent?.description || null, source: "gcal" }),
-    })
-    if (res.ok) {
-      const { event } = await res.json()
-      onEventsRefresh([...events, event])
-      if (selectedGcalEvent) removeGcalEvent(selectedGcalEvent)
+  async function hideGcalEvent(ev: GCalEvent) {
+    if (!ev.id) {
+      removeGcalEventLocally(ev.id)
+      return
     }
-    setGcalSaving(false)
+    const response = await fetch("/api/gcal", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: ev.id, hidden: true }),
+    })
+    if (response.ok) {
+      removeGcalEventLocally(ev.id)
+    }
+  }
+
+  const fetchGcal = useCallback(async (force = false) => {
+    if (provider !== "google" || (!force && gcalLoaded)) return
+    setGcalLoading(true)
+    try {
+      const r = await fetch("/api/gcal")
+      const d = await r.json()
+      if (r.status === 401 || d.error === "token_expired") {
+        setGcalError("session_expired")
+      } else if (r.status === 402 || d.error === "billing_required") {
+        setGcalError("billing_required")
+      } else if (d.error === "gcal_error") {
+        setGcalError("gcal_error")
+      } else if (Array.isArray(d.events)) {
+        setGcalEvents(d.events)
+        setGcalVisible(d.visible !== false)
+        setGcalError("")
+        setGcalLoaded(true)
+      } else {
+        setGcalError("session_expired")
+      }
+    } catch {
+      setGcalError("network_error")
+    } finally {
+      setGcalLoading(false)
+    }
+  }, [gcalLoaded, provider, setGcalEvents, setGcalLoaded])
+
+  async function saveGcalEdit() {
+    if (!selectedGcalEvent || !gcalDraft.title.trim() || !gcalDraft.event_date) return
+    const originalDate = selectedGcalEvent.start ? selectedGcalEvent.start.split("T")[0] : todayStr()
+    const originalStart = !selectedGcalEvent.allDay && selectedGcalEvent.start?.includes("T") ? selectedGcalEvent.start.split("T")[1]?.slice(0, 5) ?? "" : ""
+    const originalEnd = !selectedGcalEvent.allDay && selectedGcalEvent.end?.includes("T") ? selectedGcalEvent.end.split("T")[1]?.slice(0, 5) ?? "" : ""
+    const originalMember = selectedGcalEvent.member_name ?? ""
+    const detailsChanged =
+      gcalDraft.title.trim() !== selectedGcalEvent.title ||
+      gcalDraft.event_date !== originalDate ||
+      gcalDraft.start_time !== originalStart ||
+      gcalDraft.end_time !== originalEnd
+    const memberChanged = gcalDraft.member_name !== originalMember
+
+    if (!detailsChanged && !memberChanged) {
+      setGcalEditMode(false)
+      return
+    }
+
+    setGcalSaving(true)
+    try {
+      if (memberChanged && selectedGcalEvent.id) {
+        const assignRes = await fetch("/api/gcal", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId: selectedGcalEvent.id, member_name: gcalDraft.member_name || null }),
+        })
+        if (assignRes.ok) {
+          syncGcalEventLocally(selectedGcalEvent.id, { member_name: gcalDraft.member_name || null })
+        }
+      }
+
+      if (detailsChanged) {
+        const res = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: gcalDraft.title.trim(),
+            event_date: gcalDraft.event_date,
+            start_time: gcalDraft.start_time || null,
+            end_time: gcalDraft.end_time || null,
+            description: selectedGcalEvent.description || null,
+            member_name: gcalDraft.member_name || null,
+            source: "gcal",
+          }),
+        })
+        if (res.ok) {
+          const { event } = await res.json()
+          onEventsRefresh([...events, event])
+          await hideGcalEvent(selectedGcalEvent)
+        }
+      } else {
+        setGcalEditMode(false)
+      }
+    } finally {
+      setGcalSaving(false)
+    }
   }
 
   const memberList = [{ name: "All", color: "#6b7280" }, { name: "Family", color: "#818cf8" }, ...memberOptions.map((member) => ({ name: member.name, color: member.color }))]
@@ -205,36 +312,14 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
   }
 
   function filteredGcalEvents(evts: GCalEvent[]) {
-    if (!memberFilter || memberFilter === "Family") return evts
-    return []
+    if (!memberFilter) return evts
+    if (memberFilter === "Family") return evts.filter((event) => !event.member_name)
+    return evts.filter((event) => (event.member_name ?? "").toLowerCase() === memberFilter.toLowerCase())
   }
 
   useEffect(() => {
-    if (provider !== "google" || gcalLoaded) return
-    ;(async () => {
-      setGcalLoading(true)
-      try {
-        const r = await fetch("/api/gcal")
-        const d = await r.json()
-        if (r.status === 401 || d.error === "token_expired") {
-          setGcalError("session_expired")
-        } else if (r.status === 402 || d.error === "billing_required") {
-          setGcalError("billing_required")
-        } else if (d.error === "gcal_error") {
-          setGcalError("gcal_error")
-        } else if (Array.isArray(d.events)) {
-          setGcalEvents(d.events)
-          setGcalLoaded(true)
-        } else {
-          setGcalError("session_expired")
-        }
-      } catch {
-        setGcalError("network_error")
-      } finally {
-        setGcalLoading(false)
-      }
-    })()
-  }, [provider, gcalLoaded, setGcalEvents, setGcalLoaded])
+    void fetchGcal(false)
+  }, [fetchGcal])
 
   const today = todayStr()
 
@@ -274,7 +359,22 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
 
   async function handleAddEvent(title: string, date: string, time: string | null, memberName?: string | null, reminderOffsetMinutes?: ReminderOffsetMinutes, recurrence?: string | null) {
     const ok = await onAddEvent(title, date, time, memberName, reminderOffsetMinutes, recurrence)
-    if (ok) setShowAddEvent(false)
+    if (ok) closeAddEvent()
+  }
+
+  function isInteractiveCalendarTarget(target: EventTarget | null) {
+    return target instanceof HTMLElement && !!target.closest("[data-cal-interactive='true']")
+  }
+
+  function timeFromSlot(event: ReactMouseEvent<HTMLDivElement>, earliestHour: number, hourHeight: number) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const y = Math.max(0, event.clientY - rect.top)
+    const rawMinutes = earliestHour * 60 + (y / hourHeight) * 60
+    const roundedMinutes = Math.round(rawMinutes / 15) * 15
+    const totalMinutes = Math.max(0, Math.min(23 * 60 + 45, roundedMinutes))
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
   }
 
   const calendarShellBg = "linear-gradient(180deg, rgba(251,252,255,0.98), rgba(237,242,255,0.96))"
@@ -313,11 +413,12 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   </div>
                   {selectedGcalEvent.location && <div><div style={fieldLabelStyle}>Location</div><div style={{ fontSize: "0.85rem", marginTop: "0.2rem" }}>{selectedGcalEvent.location}</div></div>}
                   {selectedGcalEvent.description && <div><div style={fieldLabelStyle}>Description</div><div style={{ fontSize: "0.82rem", marginTop: "0.2rem", color: "var(--muted)", whiteSpace: "pre-wrap" }}>{selectedGcalEvent.description}</div></div>}
+                  <div><div style={fieldLabelStyle}>Family Member</div><div style={{ fontSize: "0.82rem", marginTop: "0.2rem", color: "var(--muted)" }}>{selectedGcalEvent.member_name || "Family"}</div></div>
                   <div><div style={fieldLabelStyle}>Source</div><div style={{ fontSize: "0.78rem", color: "#818cf8", marginTop: "0.2rem" }}>Google Calendar</div></div>
                 </div>
                 <div style={{ display: "flex", gap: "0.625rem" }}>
-                  <button onClick={() => removeGcalEvent(selectedGcalEvent)} style={{ padding: "0.65rem 1rem", borderRadius: "10px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Remove</button>
-                  <button onClick={() => setGcalEditMode(true)} style={{ flex: 1, padding: "0.65rem", borderRadius: "10px", background: "linear-gradient(135deg,#6366f1,#c084fc)", border: "none", color: "white", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Edit Event</button>
+                  <button onClick={() => void hideGcalEvent(selectedGcalEvent)} style={{ padding: "0.65rem 1rem", borderRadius: "10px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Hide from Famco</button>
+                  <button onClick={() => setGcalEditMode(true)} style={{ flex: 1, padding: "0.65rem", borderRadius: "10px", background: "linear-gradient(135deg,#6366f1,#c084fc)", border: "none", color: "white", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Edit / Assign</button>
                 </div>
               </>
             ) : (
@@ -329,6 +430,20 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                     <div><label style={fieldLabelStyle}>Start Time</label><input type="time" value={gcalDraft.start_time} onChange={(e) => setGcalDraft((d) => ({ ...d, start_time: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", colorScheme: "dark" }} /></div>
                   </div>
                   <div><label style={fieldLabelStyle}>End Time</label><input type="time" value={gcalDraft.end_time} onChange={(e) => setGcalDraft((d) => ({ ...d, end_time: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", colorScheme: "dark" }} /></div>
+                  {memberOptions.length > 0 && (
+                    <div>
+                      <label style={fieldLabelStyle}>Family Member</label>
+                      <select value={gcalDraft.member_name} onChange={(e) => setGcalDraft((d) => ({ ...d, member_name: e.target.value }))} style={{ ...inputSt, marginTop: "0.25rem", cursor: "pointer" }}>
+                        <option value="">Family</option>
+                        {memberOptions.map((member) => (
+                          <option key={`${member.kind}-${member.name}`} value={member.name}>{member.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <p style={{ fontSize: "0.72rem", color: "var(--muted)", lineHeight: 1.55, background: "rgba(99,102,241,0.06)", borderRadius: "8px", padding: "0.5rem 0.75rem" }}>
+                    Family member assignment stays attached to the synced Google event. If you change the title, date, or time, Famco saves a local copy and hides the original synced item to avoid duplicates.
+                  </p>
                 </div>
                 <div style={{ display: "flex", gap: "0.625rem" }}>
                   <button onClick={() => setGcalEditMode(false)} style={{ flex: 1, padding: "0.65rem", borderRadius: "10px", background: "none", border: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.82rem", cursor: "pointer", fontFamily: "'Inter',sans-serif" }}>Cancel</button>
@@ -387,11 +502,11 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
             <button key={v} onClick={() => setView(v)} style={{ padding: "0.4rem 0.875rem", borderRadius: "999px", border: view === v ? "none" : "1px solid rgba(99,102,241,0.14)", cursor: "pointer", background: view === v ? "linear-gradient(135deg,#34d399,#059669)" : "rgba(255,255,255,0.78)", color: view === v ? "#fff" : "#667085", fontSize: "0.8rem", fontWeight: view === v ? 700 : 600, fontFamily: "'Inter',sans-serif", textTransform: "capitalize", boxShadow: view === v ? "0 10px 22px rgba(52,211,153,0.22)" : "none" }}>{v}</button>
           ))}
           <button onClick={() => { if (!readOnly) { setShowImport(true); setImportResult(null) } }} disabled={readOnly} style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "8px", padding: "0.4rem 0.75rem", color: "#818cf8", fontSize: "0.78rem", cursor: readOnly ? "not-allowed" : "pointer", opacity: readOnly ? 0.55 : 1, fontFamily: "'Inter',sans-serif" }}>↑ Import .ics</button>
-          <button onClick={() => !readOnly && setShowAddEvent(true)} disabled={readOnly} style={{ ...savePillStyle, marginLeft: "0.25rem", opacity: readOnly ? 0.55 : 1, cursor: readOnly ? "not-allowed" : "pointer" }}>+ Add</button>
+          <button onClick={() => openAddEventForDate(todayStr(), null)} disabled={readOnly} style={{ ...savePillStyle, marginLeft: "0.25rem", opacity: readOnly ? 0.55 : 1, cursor: readOnly ? "not-allowed" : "pointer" }}>+ Add</button>
         </div>
       </div>
 
-      {showAddEvent && <AddEventModal memberOptions={memberOptions} onSave={handleAddEvent} onCancel={() => setShowAddEvent(false)} saving={saving} />}
+      {showAddEvent && <AddEventModal memberOptions={memberOptions} onSave={handleAddEvent} onCancel={closeAddEvent} saving={saving} initialDate={initialEventDate} initialTime={initialEventTime} />}
 
       {showImport && (
         <IcsImportModal
@@ -449,6 +564,36 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
       {provider === "google" && (
         <div style={{ marginBottom: "1rem", fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.625rem", flexWrap: "wrap" }}>
           {gcalLoading && <span>⟳ Loading Google Calendar…</span>}
+          {!gcalLoading && !gcalError && !gcalVisible && (
+            <span style={{ color: "#818cf8", display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+              Google Calendar items are hidden in Famco.
+              <button
+                onClick={() => {
+                  setGcalLoading(true)
+                  fetch("/api/gcal", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ scope: "feed", visible: true }),
+                  }).then(async (response) => {
+                    const data = await response.json().catch(() => ({}))
+                    if (response.ok && data.visible !== false) {
+                      setGcalVisible(true)
+                      setGcalLoaded(false)
+                      void fetchGcal(true)
+                    } else {
+                      setGcalLoading(false)
+                    }
+                  }).catch(() => {
+                    setGcalLoading(false)
+                    setGcalError("network_error")
+                  })
+                }}
+                style={{ background: "none", border: "none", color: "#818cf8", textDecoration: "underline", cursor: "pointer", fontSize: "0.78rem", fontFamily: "'Inter',sans-serif", padding: 0 }}
+              >
+                Show them again
+              </button>
+            </span>
+          )}
           {gcalError === "session_expired" && (
             <span style={{ color: "#fbbf24", display: "flex", alignItems: "center", gap: "0.4rem" }}>
               ⚠ Google session expired —{" "}
@@ -471,23 +616,46 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
             <span style={{ color: "#f87171", display: "flex", alignItems: "center", gap: "0.4rem" }}>
               ⚠ Google Calendar error —{" "}
               <button onClick={() => {
-                setGcalError(""); setGcalLoading(true)
-                fetch("/api/gcal").then(async (r) => {
-                  const d = await r.json()
-                  if (r.status === 401 || d.error === "token_expired") setGcalError("session_expired")
-                  else if (r.status === 402 || d.error === "billing_required") setGcalError("billing_required")
-                  else if (Array.isArray(d.events)) { setGcalEvents(d.events); setGcalError("") }
-                  else setGcalError("gcal_error")
-                  setGcalLoading(false)
-                }).catch(() => { setGcalError("network_error"); setGcalLoading(false) })
+                setGcalError("")
+                void fetchGcal(true)
               }} style={{ background: "none", border: "none", color: "#f87171", textDecoration: "underline", cursor: "pointer", fontSize: "0.78rem", fontFamily: "'Inter',sans-serif", padding: 0 }}>
                 retry
               </button>
             </span>
           )}
           {gcalError === "network_error" && <span style={{ color: "#f87171" }}>⚠ Could not reach Google Calendar — check your connection</span>}
-          {!gcalLoading && !gcalError && gcalEvents.length === 0 && <span style={{ color: "var(--muted)", opacity: 0.6 }}>No upcoming Google Calendar events</span>}
-          {!gcalLoading && !gcalError && gcalEvents.length > 0 && <span style={{ color: "#34d399" }}>✓ {gcalEvents.length} Google Calendar events synced</span>}
+          {!gcalLoading && !gcalError && gcalVisible && gcalEvents.length === 0 && <span style={{ color: "var(--muted)", opacity: 0.6 }}>No upcoming Google Calendar events</span>}
+          {!gcalLoading && !gcalError && gcalVisible && gcalEvents.length > 0 && <span style={{ color: "#34d399" }}>✓ {gcalEvents.length} Google Calendar events synced</span>}
+          {!gcalLoading && !gcalError && gcalVisible && !readOnly && (
+            <button
+              onClick={() => {
+                setGcalLoading(true)
+                fetch("/api/gcal", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ scope: "feed", visible: false }),
+                }).then(async (response) => {
+                  const data = await response.json().catch(() => ({}))
+                  if (response.ok && data.visible === false) {
+                    setGcalVisible(false)
+                    setGcalEvents([])
+                    setSelectedGcalEvent(null)
+                    setGcalEditMode(false)
+                    setGcalError("")
+                  } else {
+                    setGcalError("gcal_error")
+                  }
+                  setGcalLoading(false)
+                }).catch(() => {
+                  setGcalLoading(false)
+                  setGcalError("network_error")
+                })
+              }}
+              style={{ background: "none", border: "none", color: "#818cf8", textDecoration: "underline", cursor: "pointer", fontSize: "0.78rem", fontFamily: "'Inter',sans-serif", padding: 0 }}
+            >
+              Hide synced Google events
+            </button>
+          )}
         </div>
       )}
 
@@ -601,9 +769,16 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   const allDay = showEvs ? gcalEventsForDate(ds).filter((e) => e.allDay) : []
                   const allDayTasks = showTasks ? tasksForDate(ds).filter((t) => !t.due_time) : []
                   return (
-                      <div key={ds} style={{ borderLeft: "1px solid var(--border)", padding: "0.125rem 0.2rem", minWidth: 0 }}>
+                      <div
+                        key={ds}
+                        onDoubleClick={(event) => {
+                          if (isInteractiveCalendarTarget(event.target)) return
+                          openAddEventForDate(ds, null)
+                        }}
+                        style={{ borderLeft: "1px solid var(--border)", padding: "0.125rem 0.2rem", minWidth: 0 }}
+                      >
                       {allDay.map((ev) => (
-                        <div key={ev.id ?? ev.title} onClick={() => openGcalModal(ev)} style={{ fontSize: "0.62rem", background: "rgba(99,102,241,0.2)", borderLeft: "2px solid #818cf8", borderRadius: "3px", padding: "0.1rem 0.3rem", color: "#818cf8", cursor: "pointer", marginBottom: "1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{ev.title}</div>
+                        <div data-cal-interactive="true" key={ev.id ?? ev.title} onClick={() => openGcalModal(ev)} style={{ fontSize: "0.62rem", background: "rgba(99,102,241,0.2)", borderLeft: "2px solid #818cf8", borderRadius: "3px", padding: "0.1rem 0.3rem", color: "#818cf8", cursor: "pointer", marginBottom: "1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{ev.title}</div>
                       ))}
                       {allDayTasks.map((t) => (
                         <div key={t.id} onClick={() => setSelectedCalTask(t)} style={{ fontSize: "0.62rem", background: "rgba(244,114,182,0.18)", borderLeft: "2px solid #f472b6", borderRadius: "3px", padding: "0.1rem 0.3rem", color: "#f472b6", marginBottom: "1px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", cursor: "pointer" }}>✅ {t.title}</div>
@@ -639,13 +814,20 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                     const scEvs = showEvs ? filteredScanned(scannedForDate(ds)).filter((e) => !!e.start_time) : []
                     const timedTasks = showTasks ? tasksForDate(ds).filter((t) => !!t.due_time) : []
                     return (
-                      <div key={ds} style={{ position: "relative", borderLeft: "1px solid var(--border)", height: totalH, background: isToday ? "rgba(99,102,241,0.05)" : "transparent", minWidth: 0 }}>
+                      <div
+                        key={ds}
+                        onDoubleClick={(event) => {
+                          if (isInteractiveCalendarTarget(event.target)) return
+                          openAddEventForDate(ds, timeFromSlot(event, earliestHour, HOUR_H))
+                        }}
+                        style={{ position: "relative", borderLeft: "1px solid var(--border)", height: totalH, background: isToday ? "rgba(99,102,241,0.05)" : "transparent", minWidth: 0 }}
+                      >
                         {HOURS.map((h) => (
                           <div key={h} style={{ position: "absolute", top: toY(`${h}:00`), left: 0, right: 0, borderTop: hourH(h) >= HOUR_H ? "1px solid rgba(255,255,255,0.04)" : "none", pointerEvents: "none" }} />
                         ))}
                         {dayEvs.map((ev) => {
                           const top = toY(ev.start_time); const bot = toY(ev.end_time); const h = Math.max(22, bot - top || HOUR_H / 2)
-                          return <div key={ev.id} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: "rgba(52,211,153,0.18)", borderLeft: "3px solid #34d399", borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "pointer", zIndex: 1 }}>
+                          return <div data-cal-interactive="true" key={ev.id} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: "rgba(52,211,153,0.18)", borderLeft: "3px solid #34d399", borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "pointer", zIndex: 1 }}>
                             {ev.start_time && <div style={{ fontSize: "0.55rem", color: "#34d399", fontWeight: 700 }}>{fmtTime(ev.start_time)}</div>}
                             <div style={{ fontSize: "0.6rem", color: "#34d399", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
                           </div>
@@ -654,21 +836,21 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                           const t = ev.start?.includes("T") ? ev.start.split("T")[1]?.slice(0, 5) ?? null : null
                           const te = ev.end?.includes("T") ? ev.end.split("T")[1]?.slice(0, 5) ?? null : null
                           const top = toY(t); const h = Math.max(22, toY(te) - top || HOUR_H / 2)
-                          return <div key={ev.id ?? ev.title} onClick={() => openGcalModal(ev)} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: "rgba(99,102,241,0.18)", borderLeft: "3px solid #818cf8", borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "pointer", zIndex: 1 }}>
+                          return <div data-cal-interactive="true" key={ev.id ?? ev.title} onClick={() => openGcalModal(ev)} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: "rgba(99,102,241,0.18)", borderLeft: "3px solid #818cf8", borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "pointer", zIndex: 1 }}>
                             {t && <div style={{ fontSize: "0.55rem", color: "#818cf8", fontWeight: 700 }}>{fmtTime(t)}</div>}
                             <div style={{ fontSize: "0.6rem", color: "#818cf8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
                           </div>
                         })}
                         {scEvs.map((ev) => {
                           const c = scannedEventColor(ev); const top = toY(ev.start_time); const h = Math.max(22, toY(ev.end_time) - top || HOUR_H / 2)
-                          return <div key={ev.id} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: `${c}22`, borderLeft: `3px solid ${c}`, borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "default", zIndex: 1 }}>
+                          return <div data-cal-interactive="true" key={ev.id} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: `${c}22`, borderLeft: `3px solid ${c}`, borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "default", zIndex: 1 }}>
                             {ev.start_time && <div style={{ fontSize: "0.55rem", color: c, fontWeight: 700 }}>{fmtTime(ev.start_time)}</div>}
                             <div style={{ fontSize: "0.6rem", color: c, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.calendar_title ?? ev.title}</div>
                           </div>
                         })}
                         {timedTasks.map((t) => {
                           const top = toY(t.due_time); const h = 28
-                          return <div key={t.id} onClick={() => setSelectedCalTask(t)} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: "rgba(244,114,182,0.18)", borderLeft: "3px solid #f472b6", borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "pointer", zIndex: 1 }}>
+                          return <div data-cal-interactive="true" key={t.id} onClick={() => setSelectedCalTask(t)} style={{ position: "absolute", top, left: 2, right: 2, height: h, background: "rgba(244,114,182,0.18)", borderLeft: "3px solid #f472b6", borderRadius: "4px", padding: "2px 4px", overflow: "hidden", cursor: "pointer", zIndex: 1 }}>
                             <div style={{ fontSize: "0.55rem", color: "#f472b6", fontWeight: 700 }}>{fmtTime(t.due_time!)}</div>
                             <div style={{ fontSize: "0.6rem", color: "#f472b6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✅ {t.title}</div>
                           </div>
@@ -718,12 +900,19 @@ export function CalendarTab({ events, tasks, onDeleteEvent, onUpdateEvent, onAdd
                   const visible = allEvs.slice(0, LIMIT)
                   const overflow = allEvs.length - LIMIT
                   return (
-                    <div key={ds} style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? calendarCurrentCellBg : calendarMutedCellBg, minWidth: 0 }}>
+                    <div
+                      key={ds}
+                      onDoubleClick={(event) => {
+                        if (isInteractiveCalendarTarget(event.target)) return
+                        openAddEventForDate(ds, null)
+                      }}
+                      style={{ minHeight: "108px", borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "0.3rem 0.25rem", background: isToday ? calendarTodayBg : isCurMonth ? calendarCurrentCellBg : calendarMutedCellBg, minWidth: 0 }}
+                    >
                       <div style={{ marginBottom: "0.25rem" }}>
                         <span style={{ display: "inline-flex", width: "22px", height: "22px", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: isToday ? "#6366f1" : "transparent", color: isToday ? "#fff" : isCurMonth ? "var(--text)" : "var(--muted)", fontSize: "0.75rem", fontWeight: isToday ? 700 : 400 }}>{day.getDate()}</span>
                       </div>
                       {visible.map((item) => (
-                        <div key={item.key} onClick={item.onClick} style={{ display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.6rem", padding: "0.1rem 0.25rem", marginBottom: "0.15rem", borderRadius: "3px", background: `${item.color}18`, borderLeft: `2px solid ${item.color}`, color: item.color, cursor: item.onClick ? "pointer" : "default", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", minWidth: 0 }}>
+                        <div data-cal-interactive="true" key={item.key} onClick={item.onClick} style={{ display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.6rem", padding: "0.1rem 0.25rem", marginBottom: "0.15rem", borderRadius: "3px", background: `${item.color}18`, borderLeft: `2px solid ${item.color}`, color: item.color, cursor: item.onClick ? "pointer" : "default", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", minWidth: 0 }}>
                           {item.time && <span style={{ flexShrink: 0, fontWeight: 700 }}>{fmtTime(item.time)}</span>}
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{item.label}</span>
                         </div>

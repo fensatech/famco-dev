@@ -17,13 +17,14 @@ interface Props {
   onCancel: () => void
   saving: boolean
   initialDate?: string
+  initialTime?: string | null
   memberOptions?: CalendarMemberOption[]
 }
 
-export function AddEventModal({ onSave, onCancel, saving, initialDate, memberOptions = [] }: Props) {
+export function AddEventModal({ onSave, onCancel, saving, initialDate, initialTime, memberOptions = [] }: Props) {
   const [title, setTitle] = useState("")
   const [date, setDate] = useState(initialDate ?? todayStr())
-  const [time, setTime] = useState("")
+  const [time, setTime] = useState(initialTime ?? "")
   const [memberName, setMemberName] = useState("")
   const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<ReminderOffsetMinutes>(DEFAULT_REMINDER_OFFSET_MINUTES)
   const [recurrence, setRecurrence] = useState("")

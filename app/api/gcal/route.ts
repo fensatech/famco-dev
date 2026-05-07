@@ -2,7 +2,16 @@ import { auth } from "@/auth"
 import { NextRequest, NextResponse } from "next/server"
 import { google } from "googleapis"
 import { billingEnforcementEnabled, getTrialStartedAt, getTrialWindow, isSyncAllowedForProfile } from "@/lib/billing"
-import { getPrimaryHouseholdProfile } from "@/lib/db"
+import {
+  ensureRuntimeSchema,
+  getGoogleCalendarEventOverrides,
+  getGoogleCalendarPreferences,
+  getHouseholdRole,
+  getPrimaryHouseholdProfile,
+  setGoogleCalendarVisibility,
+  upsertGoogleCalendarEventOverride,
+} from "@/lib/db"
+import { canManageSharedCalendar } from "@/lib/permissions"
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -13,6 +22,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    await ensureRuntimeSchema().catch(() => {})
     const billingProfile = await getPrimaryHouseholdProfile(session.profileId)
     if (billingEnforcementEnabled() && billingProfile && !isSyncAllowedForProfile(billingProfile)) {
       const trialWindow = getTrialWindow(getTrialStartedAt(billingProfile))
@@ -25,6 +35,11 @@ export async function GET(req: NextRequest) {
         },
         { status: 402 },
       )
+    }
+
+    const preferences = await getGoogleCalendarPreferences(session.profileId)
+    if (!preferences.visible) {
+      return NextResponse.json({ events: [], visible: false })
     }
 
     const auth2 = new google.auth.OAuth2()
@@ -43,7 +58,12 @@ export async function GET(req: NextRequest) {
       maxResults: 100,
     })
 
-    const events = (res.data.items ?? []).map((ev) => ({
+    const overrides = await getGoogleCalendarEventOverrides(session.profileId)
+    const overrideMap = new Map(overrides.map((override) => [override.external_event_id, override]))
+
+    const events = (res.data.items ?? []).map((ev) => {
+      const override = ev.id ? overrideMap.get(ev.id) : undefined
+      return {
       id: ev.id,
       title: ev.summary ?? "(No title)",
       start: ev.start?.dateTime ?? ev.start?.date ?? null,
@@ -51,9 +71,11 @@ export async function GET(req: NextRequest) {
       allDay: !ev.start?.dateTime,
       location: ev.location ?? null,
       description: ev.description ?? null,
-    }))
+      member_name: override?.member_name ?? null,
+      hidden: override?.hidden ?? false,
+    }}).filter((event) => !event.hidden)
 
-    return NextResponse.json({ events })
+    return NextResponse.json({ events, visible: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown"
     console.error("[gcal]", msg)
@@ -68,4 +90,37 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ error: "gcal_error" }, { status: 500 })
   }
+}
+
+export async function PATCH(req: NextRequest) {
+  const session = await auth()
+  if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (session.provider !== "google") return NextResponse.json({ error: "Unsupported provider" }, { status: 400 })
+
+  await ensureRuntimeSchema().catch(() => {})
+  const role = await getHouseholdRole(session.profileId)
+  if (!canManageSharedCalendar(role)) {
+    return NextResponse.json({ error: "You have read-only access for shared calendar changes." }, { status: 403 })
+  }
+
+  const body = await req.json()
+
+  if (body.scope === "feed") {
+    const preference = await setGoogleCalendarVisibility(session.profileId, body.visible !== false)
+    return NextResponse.json({ visible: preference.visible })
+  }
+
+  const eventId = typeof body.eventId === "string" ? body.eventId.trim() : ""
+  if (!eventId) return NextResponse.json({ error: "eventId is required" }, { status: 400 })
+
+  const updates: { member_name?: string | null; hidden?: boolean } = {}
+  if ("member_name" in body) {
+    updates.member_name = typeof body.member_name === "string" && body.member_name.trim()
+      ? body.member_name.trim()
+      : null
+  }
+  if ("hidden" in body) updates.hidden = Boolean(body.hidden)
+
+  const override = await upsertGoogleCalendarEventOverride(session.profileId, eventId, updates)
+  return NextResponse.json({ override })
 }

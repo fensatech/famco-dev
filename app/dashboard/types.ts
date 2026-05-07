@@ -67,6 +67,7 @@ export interface DocumentRow {
 export interface GCalEvent {
   id: string | null; title: string; start: string | null; end: string | null
   allDay: boolean; location: string | null; description?: string | null
+  member_name?: string | null
 }
 
 export interface CalendarMemberOption {
