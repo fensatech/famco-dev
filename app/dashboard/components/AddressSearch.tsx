@@ -13,6 +13,7 @@ interface AddressParts {
 
 interface AddressSuggestion extends AddressParts {
   id: string
+  name: string
   display: string
 }
 
@@ -49,7 +50,7 @@ export function AddressSearch({
 
   function selectSuggestion(suggestion: AddressSuggestion) {
     if (simpleMode) {
-      const full = [suggestion.street, suggestion.city, suggestion.province, suggestion.postal].filter(Boolean).join(", ")
+      const full = suggestion.display || [suggestion.name, suggestion.street, suggestion.city, suggestion.province, suggestion.postal, suggestion.country].filter(Boolean).join(", ")
       onChange(full)
       onSelectSimple?.(full)
     } else {

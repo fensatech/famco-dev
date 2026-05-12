@@ -1,6 +1,6 @@
 {
   "name": "famco-app",
-  "version": "17.0.7",
+  "version": "17.0.8",
   "private": true,
   "scripts": {
     "dev": "next dev",

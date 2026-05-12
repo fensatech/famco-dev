@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { FAMILY_TYPE_OPTIONS } from "@/types"
 import type { FamilyInvite, HouseholdMember, HouseholdNotificationPreferences, HouseholdRole } from "@/types"
 import { canEditHousehold, canManageInvites } from "@/lib/permissions"
@@ -90,6 +90,147 @@ function SettingsSection({ title, icon, children, accent, bg }: { title: string;
 type EditKid = { id: string; firstName: string; lastName: string; dob: string; schoolName: string; schoolAddress: string; grade: string; daycareName: string; daycareAddress: string }
 type EditPet = { id: string; name: string; animalType: string; breed: string; dob: string }
 
+interface ProfileApiResponse {
+  email: string | null
+  first_name: string | null
+  last_name: string | null
+  phone: string | null
+  city: string | null
+  timezone: string | null
+  family_type: ProfileData["familyType"] | null
+  spouse_first_name: string | null
+  spouse_last_name: string | null
+  spouse_phone: string | null
+  spouse_email: string | null
+  address_street: string | null
+  address_province: string | null
+  address_postal: string | null
+  address_country: string | null
+  work_type: string | null
+  work_address: string | null
+  spouse_work_type: string | null
+  spouse_work_address: string | null
+  created_at: string
+}
+
+interface KidApiResponse {
+  id: string
+  name: string
+  first_name: string | null
+  last_name: string | null
+  dob: string | null
+  school_name: string | null
+  school_address: string | null
+  grade: string | null
+  daycare_name: string | null
+  daycare_address: string | null
+}
+
+interface PetApiResponse {
+  id: string
+  name: string
+  animal_type: string
+  breed: string | null
+  dob: string | null
+}
+
+function mapProfileToDraft(profile: ProfileData) {
+  return {
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    phone: profile.phone,
+    familyType: profile.familyType,
+    city: profile.city,
+    timezone: profile.timezone,
+    addressStreet: profile.addressStreet,
+    addressProvince: profile.addressProvince,
+    addressPostal: profile.addressPostal,
+    addressCountry: profile.addressCountry,
+    workType: profile.workType,
+    workAddress: profile.workAddress,
+    spouseFirstName: profile.spouseFirstName,
+    spouseLastName: profile.spouseLastName,
+    spousePhone: profile.spousePhone,
+    spouseEmail: profile.spouseEmail,
+    spouseWorkType: profile.spouseWorkType,
+    spouseWorkAddress: profile.spouseWorkAddress,
+  }
+}
+
+function mapKidRowsToEditKids(rows: KidRow[]): EditKid[] {
+  return rows.map((kid) => ({
+    id: kid.id,
+    firstName: kid.firstName ?? "",
+    lastName: kid.lastName ?? "",
+    dob: kid.dob ?? "",
+    schoolName: kid.schoolName ?? "",
+    schoolAddress: kid.schoolAddress ?? "",
+    grade: kid.grade ?? "",
+    daycareName: kid.daycareName ?? "",
+    daycareAddress: kid.daycareAddress ?? "",
+  }))
+}
+
+function mapPetRowsToEditPets(rows: PetRow[]): EditPet[] {
+  return rows.map((pet) => ({
+    id: pet.id,
+    name: pet.name,
+    animalType: pet.animalType,
+    breed: pet.breed ?? "",
+    dob: pet.dob ?? "",
+  }))
+}
+
+function mapProfileApiToProfileData(profile: ProfileApiResponse): ProfileData {
+  return {
+    firstName: profile.first_name ?? "",
+    lastName: profile.last_name ?? "",
+    email: profile.email ?? "",
+    phone: profile.phone ?? "",
+    city: profile.city ?? "",
+    timezone: profile.timezone ?? "",
+    familyType: profile.family_type ?? null,
+    createdAt: profile.created_at,
+    spouseFirstName: profile.spouse_first_name ?? "",
+    spouseLastName: profile.spouse_last_name ?? "",
+    spousePhone: profile.spouse_phone ?? "",
+    spouseEmail: profile.spouse_email ?? "",
+    addressStreet: profile.address_street ?? "",
+    addressProvince: profile.address_province ?? "",
+    addressPostal: profile.address_postal ?? "",
+    addressCountry: profile.address_country ?? "",
+    workType: profile.work_type ?? "",
+    workAddress: profile.work_address ?? "",
+    spouseWorkType: profile.spouse_work_type ?? "",
+    spouseWorkAddress: profile.spouse_work_address ?? "",
+  }
+}
+
+function mapKidsApiToKidRows(rows: KidApiResponse[]): KidRow[] {
+  return rows.map((kid) => ({
+    id: kid.id,
+    name: kid.name,
+    firstName: kid.first_name ?? null,
+    lastName: kid.last_name ?? null,
+    dob: kid.dob ? String(kid.dob).slice(0, 10) : null,
+    schoolName: kid.school_name ?? null,
+    schoolAddress: kid.school_address ?? null,
+    grade: kid.grade ?? null,
+    daycareName: kid.daycare_name ?? null,
+    daycareAddress: kid.daycare_address ?? null,
+  }))
+}
+
+function mapPetsApiToPetRows(rows: PetApiResponse[]): PetRow[] {
+  return rows.map((pet) => ({
+    id: pet.id,
+    name: pet.name,
+    animalType: pet.animal_type,
+    breed: pet.breed ?? null,
+    dob: pet.dob ? String(pet.dob).slice(0, 10) : null,
+  }))
+}
+
 interface Props {
   profile: ProfileData
   onProfileSaved: (profile: ProfileData) => void
@@ -118,21 +259,12 @@ interface Props {
 }
 
 export function SettingsTab({ profile: initialProfile, onProfileSaved, kids, setKids, pets, setPets, invites, householdMembers, currentHouseholdRole, notificationPreferences, onInvite, onRevokeInvite, onSaveNotificationPreferences }: Props) {
-  const [draft, setDraft] = useState({
-    firstName: initialProfile.firstName, lastName: initialProfile.lastName,
-    phone: initialProfile.phone, familyType: initialProfile.familyType,
-    city: initialProfile.city, timezone: initialProfile.timezone,
-    addressStreet: initialProfile.addressStreet, addressProvince: initialProfile.addressProvince,
-    addressPostal: initialProfile.addressPostal, addressCountry: initialProfile.addressCountry,
-    workType: initialProfile.workType, workAddress: initialProfile.workAddress,
-    spouseFirstName: initialProfile.spouseFirstName, spouseLastName: initialProfile.spouseLastName,
-    spousePhone: initialProfile.spousePhone, spouseEmail: initialProfile.spouseEmail,
-    spouseWorkType: initialProfile.spouseWorkType, spouseWorkAddress: initialProfile.spouseWorkAddress,
-  })
-  const [editKids, setEditKids] = useState<EditKid[]>(kids.map((k) => ({ id: k.id, firstName: k.firstName ?? "", lastName: k.lastName ?? "", dob: k.dob ?? "", schoolName: k.schoolName ?? "", schoolAddress: k.schoolAddress ?? "", grade: k.grade ?? "", daycareName: k.daycareName ?? "", daycareAddress: k.daycareAddress ?? "" })))
-  const [editPets, setEditPets] = useState<EditPet[]>(pets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed ?? "", dob: p.dob ?? "" })))
+  const [draft, setDraft] = useState(mapProfileToDraft(initialProfile))
+  const [editKids, setEditKids] = useState<EditKid[]>(mapKidRowsToEditKids(kids))
+  const [editPets, setEditPets] = useState<EditPet[]>(mapPetRowsToEditPets(pets))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState("")
   const [prefSaving, setPrefSaving] = useState(false)
   const [prefSaved, setPrefSaved] = useState(false)
   const [inviteDraft, setInviteDraft] = useState({ invited_name: "", invitee_email: "", relation: "family_member", role: "member" })
@@ -158,6 +290,18 @@ export function SettingsTab({ profile: initialProfile, onProfileSaved, kids, set
   function sk(i: number, key: keyof EditKid, val: string) { setEditKids((prev) => prev.map((k, idx) => idx === i ? { ...k, [key]: val } : k)) }
   function sp(i: number, key: keyof EditPet, val: string) { setEditPets((prev) => prev.map((p, idx) => idx === i ? { ...p, [key]: val } : p)) }
 
+  useEffect(() => {
+    setDraft(mapProfileToDraft(initialProfile))
+  }, [initialProfile])
+
+  useEffect(() => {
+    setEditKids(mapKidRowsToEditKids(kids))
+  }, [kids])
+
+  useEffect(() => {
+    setEditPets(mapPetRowsToEditPets(pets))
+  }, [pets])
+
   async function handleInvite() {
     if (!canInvite) return
     if (!inviteDraft.invitee_email.trim()) return
@@ -179,61 +323,108 @@ export function SettingsTab({ profile: initialProfile, onProfileSaved, kids, set
     window.setTimeout(() => setCopiedInviteId(null), 2000)
   }
 
+  async function getErrorMessage(response: Response, fallback: string) {
+    try {
+      const data = await response.json() as { error?: string }
+      return data.error || fallback
+    } catch {
+      return fallback
+    }
+  }
+
   async function saveAll() {
     if (!canEdit) return
     if (!draft.city.trim() || !draft.timezone) return
     setSaving(true)
+    setSaveError("")
+    setSaved(false)
     const validKids = editKids.filter((k) => k.firstName.trim() || k.lastName.trim())
     const validPets = editPets.filter((p) => p.name.trim() && p.animalType)
-    await Promise.all([
-      fetch("/api/profile", {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          first_name: draft.firstName || null, last_name: draft.lastName || null,
-          phone: draft.phone || null, family_type: draft.familyType || null,
-          city: draft.city || null, timezone: draft.timezone || null,
-          address_street: draft.addressStreet || null, address_province: draft.addressProvince || null,
-          address_postal: draft.addressPostal || null, address_country: draft.addressCountry || null,
-          work_type: draft.workType || null, work_address: draft.workAddress || null,
-          spouse_first_name: draft.spouseFirstName || null, spouse_last_name: draft.spouseLastName || null,
-          spouse_phone: draft.spousePhone || null, spouse_email: draft.spouseEmail || null,
-          spouse_work_type: draft.spouseWorkType || null, spouse_work_address: draft.spouseWorkAddress || null,
+    const normalizedWorkType = draft.workType || null
+    const normalizedSpouseWorkType = hasSpouse ? (draft.spouseWorkType || null) : null
+    const profilePayload = {
+      first_name: draft.firstName || null,
+      last_name: draft.lastName || null,
+      phone: draft.phone || null,
+      family_type: draft.familyType || null,
+      city: draft.city || null,
+      timezone: draft.timezone || null,
+      address_street: draft.addressStreet || null,
+      address_province: draft.addressProvince || null,
+      address_postal: draft.addressPostal || null,
+      address_country: draft.addressCountry || null,
+      work_type: normalizedWorkType,
+      work_address: normalizedWorkType && normalizedWorkType !== "wfh" ? draft.workAddress || null : null,
+      spouse_first_name: hasSpouse ? draft.spouseFirstName || null : null,
+      spouse_last_name: hasSpouse ? draft.spouseLastName || null : null,
+      spouse_phone: hasSpouse ? draft.spousePhone || null : null,
+      spouse_email: hasSpouse ? draft.spouseEmail || null : null,
+      spouse_work_type: normalizedSpouseWorkType,
+      spouse_work_address: normalizedSpouseWorkType && normalizedSpouseWorkType !== "wfh" ? draft.spouseWorkAddress || null : null,
+    }
+
+    try {
+      await fetch("/api/migrate", { method: "POST" }).catch(() => {})
+
+      const [profileResponse, kidsResponse, petsResponse] = await Promise.all([
+        fetch("/api/profile", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profilePayload),
         }),
-      }),
-      fetch("/api/kids", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kids: validKids.map((k) => ({ first_name: k.firstName.trim(), last_name: k.lastName.trim(), dob: k.dob || null, school_name: k.schoolName.trim() || null, school_address: k.schoolAddress.trim() || null, grade: k.grade.trim() || null, daycare_name: k.daycareName.trim() || null, daycare_address: k.daycareAddress.trim() || null })) }),
-      }),
-      fetch("/api/migrate", { method: "POST" }).catch(() => {}),
-      fetch("/api/pets", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pets: validPets.map((p) => ({ name: p.name.trim(), animal_type: p.animalType, breed: p.breed.trim() || null, dob: p.dob || null })) }),
-      }).catch(() => {}),
-    ])
-    onProfileSaved({
-      ...initialProfile,
-      firstName: draft.firstName,
-      lastName: draft.lastName,
-      phone: draft.phone,
-      familyType: draft.familyType,
-      city: draft.city,
-      timezone: draft.timezone,
-      spouseFirstName: draft.spouseFirstName,
-      spouseLastName: draft.spouseLastName,
-      spousePhone: draft.spousePhone,
-      spouseEmail: draft.spouseEmail,
-      addressStreet: draft.addressStreet,
-      addressProvince: draft.addressProvince,
-      addressPostal: draft.addressPostal,
-      addressCountry: draft.addressCountry,
-      workType: draft.workType,
-      workAddress: draft.workAddress,
-      spouseWorkType: draft.spouseWorkType,
-      spouseWorkAddress: draft.spouseWorkAddress,
-    })
-    setKids(validKids.map((k) => ({ id: k.id, name: [k.firstName, k.lastName].filter(Boolean).join(" "), firstName: k.firstName || null, lastName: k.lastName || null, dob: k.dob || null, schoolName: k.schoolName || null, schoolAddress: k.schoolAddress || null, grade: k.grade || null, daycareName: k.daycareName || null, daycareAddress: k.daycareAddress || null })))
-    setPets(validPets.map((p) => ({ id: p.id, name: p.name, animalType: p.animalType, breed: p.breed || null, dob: p.dob || null })))
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 3000)
+        fetch("/api/kids", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kids: validKids.map((k) => ({ first_name: k.firstName.trim(), last_name: k.lastName.trim(), dob: k.dob || null, school_name: k.schoolName.trim() || null, school_address: k.schoolAddress.trim() || null, grade: k.grade.trim() || null, daycare_name: k.daycareName.trim() || null, daycare_address: k.daycareAddress.trim() || null })) }),
+        }),
+        fetch("/api/pets", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pets: validPets.map((p) => ({ name: p.name.trim(), animal_type: p.animalType, breed: p.breed.trim() || null, dob: p.dob || null })) }),
+        }),
+      ])
+
+      if (!profileResponse.ok) {
+        throw new Error(await getErrorMessage(profileResponse, "Could not save your family profile."))
+      }
+      if (!kidsResponse.ok) {
+        throw new Error(await getErrorMessage(kidsResponse, "Could not save the children section."))
+      }
+      if (!petsResponse.ok) {
+        throw new Error(await getErrorMessage(petsResponse, "Could not save the pets section."))
+      }
+
+      const [profileFetch, kidsFetch, petsFetch] = await Promise.all([
+        fetch("/api/profile", { cache: "no-store" }),
+        fetch("/api/kids", { cache: "no-store" }),
+        fetch("/api/pets", { cache: "no-store" }),
+      ])
+
+      if (!profileFetch.ok) {
+        throw new Error(await getErrorMessage(profileFetch, "Your profile saved, but Famco could not reload it."))
+      }
+      if (!kidsFetch.ok) {
+        throw new Error(await getErrorMessage(kidsFetch, "Children saved, but Famco could not reload them."))
+      }
+      if (!petsFetch.ok) {
+        throw new Error(await getErrorMessage(petsFetch, "Pets saved, but Famco could not reload them."))
+      }
+
+      const nextProfile = mapProfileApiToProfileData(await profileFetch.json() as ProfileApiResponse)
+      const nextKids = mapKidsApiToKidRows(await kidsFetch.json() as KidApiResponse[])
+      const petsPayload = await petsFetch.json() as { pets?: PetApiResponse[] }
+      const nextPets = mapPetsApiToPetRows(Array.isArray(petsPayload.pets) ? petsPayload.pets : [])
+
+      onProfileSaved(nextProfile)
+      setDraft(mapProfileToDraft(nextProfile))
+      setKids(nextKids)
+      setEditKids(mapKidRowsToEditKids(nextKids))
+      setPets(nextPets)
+      setEditPets(mapPetRowsToEditPets(nextPets))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Famco could not save your household details.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function saveNotificationPreferences() {
@@ -265,6 +456,11 @@ export function SettingsTab({ profile: initialProfile, onProfileSaved, kids, set
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.75rem", flexWrap: "wrap", gap: "0.75rem" }}>
         <div>
           <h2 style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginBottom: "0.2rem" }}>Manage Family</h2>
+          {saveError ? (
+            <div style={{ marginTop: "0.6rem", fontSize: "0.76rem", color: "#f87171", fontWeight: 600 }}>
+              {saveError}
+            </div>
+          ) : null}
           <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>This is how Famco learns your family. Names, schools, activities, and work schedules train the AI — the more complete your profile, the more relevant your Insights, smarter email scanning, and accurate reminders.</p>
         </div>
         <button onClick={saveAll} disabled={!canEdit || saving || !draft.city.trim() || !draft.timezone} style={{ ...savePillStyle, padding: "0.65rem 1.75rem", fontSize: "0.875rem", background: saved ? "linear-gradient(135deg,#4ade80,#22c55e)" : saving ? "rgba(99,102,241,0.5)" : "linear-gradient(135deg,#6366f1,#c084fc)", opacity: !canEdit ? 0.55 : 1, cursor: !canEdit ? "not-allowed" : "pointer" }}>
