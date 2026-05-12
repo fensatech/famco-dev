@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { getHouseholdRole, getProfile, updateProfile } from "@/lib/db"
+import { ensureRuntimeSchema, getHouseholdRole, getPrimaryHouseholdProfile, getProfile, updateHouseholdProfile } from "@/lib/db"
 import { canEditHousehold } from "@/lib/permissions"
 
 export async function GET() {
@@ -8,7 +8,8 @@ export async function GET() {
   if (!session?.profileId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
-  const profile = await getProfile(session.profileId)
+  await ensureRuntimeSchema().catch(() => {})
+  const profile = (await getPrimaryHouseholdProfile(session.profileId)) ?? await getProfile(session.profileId)
   return NextResponse.json(profile)
 }
 
@@ -17,6 +18,7 @@ export async function PATCH(req: NextRequest) {
   if (!session?.profileId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  await ensureRuntimeSchema().catch(() => {})
   const role = await getHouseholdRole(session.profileId)
   if (!canEditHousehold(role)) {
     return NextResponse.json({ error: "You have read-only access for household settings." }, { status: 403 })
@@ -60,8 +62,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    await updateProfile(session.profileId, updates)
-    return NextResponse.json({ ok: true })
+    const profile = await updateHouseholdProfile(session.profileId, updates)
+    return NextResponse.json({ ok: true, profile })
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error"
     return NextResponse.json({ error: msg }, { status: 500 })

@@ -340,6 +340,12 @@ export async function getPrimaryHouseholdProfile(profileId: string): Promise<Pro
   return getProfile(householdRootId)
 }
 
+export async function updateHouseholdProfile(profileId: string, updates: Partial<Profile>): Promise<Profile | null> {
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  await updateProfile(householdRootId, updates)
+  return getProfile(householdRootId)
+}
+
 export async function getHouseholdRole(profileId: string): Promise<HouseholdRole> {
   const pool = getPool()
   const profile = await getProfile(profileId)

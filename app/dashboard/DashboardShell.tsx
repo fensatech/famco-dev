@@ -26,7 +26,7 @@ import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride, Co
 import { memberColor } from "./lib/events"
 import { getHouseholdSetupStatus } from "./lib/setup"
 
-export function DashboardShell({ currentProfileId: _currentProfileId, currentHouseholdRole, notificationPreferences: initialNotificationPreferences, profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion, isAdmin }: DashboardShellProps) {
+export function DashboardShell({ currentProfileId: _currentProfileId, currentUserFirstName, currentHouseholdRole, notificationPreferences: initialNotificationPreferences, profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion, isAdmin }: DashboardShellProps) {
   void _currentProfileId
   const [tab, setTab] = useState<Tab>("home")
   const [profile, setProfile] = useState(initialProfile)
@@ -507,7 +507,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentHou
 
           {tab === "home" && (
             <HomeTab
-              firstName={profile.firstName}
+              firstName={currentUserFirstName || profile.firstName}
               kids={kids}
               events={todayEvents}
               pendingTasks={pending}

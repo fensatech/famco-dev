@@ -51,29 +51,30 @@ export default async function DashboardPage() {
   return (
     <DashboardShell
       currentProfileId={session.profileId}
+      currentUserFirstName={profile.first_name ?? ""}
       currentHouseholdRole={householdRole}
       notificationPreferences={notificationPreferences}
       profile={{
-        firstName: profile.first_name ?? "",
-        lastName: profile.last_name ?? "",
-        email: profile.email ?? "",
-        phone: profile.phone ?? "",
-        city: profile.city ?? "",
-        timezone: profile.timezone ?? "",
-        familyType: profile.family_type ?? null,
-        createdAt: profile.created_at,
-        spouseFirstName: profile.spouse_first_name ?? "",
-        spouseLastName: profile.spouse_last_name ?? "",
-        spousePhone: profile.spouse_phone ?? "",
-        spouseEmail: profile.spouse_email ?? "",
-        addressStreet: profile.address_street ?? "",
-        addressProvince: profile.address_province ?? "",
-        addressPostal: profile.address_postal ?? "",
-        addressCountry: profile.address_country ?? "",
-        workType: profile.work_type ?? "",
-        workAddress: profile.work_address ?? "",
-        spouseWorkType: profile.spouse_work_type ?? "",
-        spouseWorkAddress: profile.spouse_work_address ?? "",
+        firstName: primaryProfile.first_name ?? "",
+        lastName: primaryProfile.last_name ?? "",
+        email: primaryProfile.email ?? "",
+        phone: primaryProfile.phone ?? "",
+        city: primaryProfile.city ?? "",
+        timezone: primaryProfile.timezone ?? "",
+        familyType: primaryProfile.family_type ?? null,
+        createdAt: primaryProfile.created_at,
+        spouseFirstName: primaryProfile.spouse_first_name ?? "",
+        spouseLastName: primaryProfile.spouse_last_name ?? "",
+        spousePhone: primaryProfile.spouse_phone ?? "",
+        spouseEmail: primaryProfile.spouse_email ?? "",
+        addressStreet: primaryProfile.address_street ?? "",
+        addressProvince: primaryProfile.address_province ?? "",
+        addressPostal: primaryProfile.address_postal ?? "",
+        addressCountry: primaryProfile.address_country ?? "",
+        workType: primaryProfile.work_type ?? "",
+        workAddress: primaryProfile.work_address ?? "",
+        spouseWorkType: primaryProfile.spouse_work_type ?? "",
+        spouseWorkAddress: primaryProfile.spouse_work_address ?? "",
       }}
       kids={kids.map((k) => ({
         id: k.id, name: k.name,

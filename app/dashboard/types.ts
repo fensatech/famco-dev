@@ -83,6 +83,7 @@ export type { BillingSummary }
 
 export interface DashboardViewModel {
   currentProfileId: string
+  currentUserFirstName: string
   currentHouseholdRole: HouseholdRole
   notificationPreferences: HouseholdNotificationPreferences
   profile: ProfileData
