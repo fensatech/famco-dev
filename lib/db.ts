@@ -69,6 +69,18 @@ export async function ensureRuntimeSchema() {
 
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS household_root_id TEXT;
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS billing_trial_started_at TIMESTAMPTZ;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_first_name TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_last_name TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_phone TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_email TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS address_street TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS address_province TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS address_postal TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS address_country TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS work_type TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS work_address TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_work_type TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_work_address TEXT;
       UPDATE profiles SET household_root_id = id WHERE household_root_id IS NULL;
       UPDATE profiles SET billing_trial_started_at = created_at WHERE billing_trial_started_at IS NULL;
       CREATE INDEX IF NOT EXISTS profiles_household_root_idx
