@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import Anthropic from "@anthropic-ai/sdk"
 import { auth } from "@/auth"
 import { billingEnforcementEnabled, getTrialStartedAt, getTrialWindow, isSyncAllowedForProfile } from "@/lib/billing"
 import {
@@ -158,10 +157,9 @@ export async function POST() {
       warnings.add("organization_indexing_skipped")
     }
 
-    const anthropicKey = process.env.ANTHROPIC_API_KEY
-    if (anthropicKey && result.rawEmails.length > 0 && !result.ai_unavailable_reason) {
+    const openAiKey = process.env.OPENAI_API_KEY?.trim()
+    if (openAiKey && result.rawEmails.length > 0 && !result.ai_unavailable_reason) {
       try {
-        const client = new Anthropic({ apiKey: anthropicKey })
         const members = [
           { name: parentName, type: "parent" as const },
           ...(spouseName ? [{ name: spouseName, type: "parent" as const }] : []),
@@ -174,7 +172,7 @@ export async function POST() {
           })),
         ]
         const emailsForAI = result.rawEmails.slice(0, 15)
-        const aiFacts = await aiExtractFacts(client, emailsForAI, members)
+        const aiFacts = await aiExtractFacts(emailsForAI, members)
         if (aiFacts.length > 0) await upsertFacts(session.profileId, aiFacts)
       } catch (err) {
         console.error("[scan/aiExtractFacts]", err instanceof Error ? err.message : err)

@@ -1,5 +1,4 @@
 import { google } from "googleapis"
-import Anthropic from "@anthropic-ai/sdk"
 import type { RawFact, ScannedEvent } from "@/types"
 import {
   buildContextSearchTerms,
@@ -7,6 +6,7 @@ import {
   summarizeHouseholdContext,
   type HouseholdScanContext,
 } from "./household-scan"
+import { createOpenAIJsonCompletion, getOpenAIUnavailableReason, getPrimaryOpenAIModel } from "./openai"
 
 type OrgType = "school" | "medical_clinic" | "dental" | "sports" | "pharmacy" | "other"
 
@@ -170,7 +170,6 @@ function gmailDateFilter(since: Date | null): string {
 }
 
 async function aiExtractBatch(
-  client: Anthropic,
   emails: RawEmail[],
   context: HouseholdScanContext,
 ): Promise<Map<string, AIExtracted>> {
@@ -188,7 +187,8 @@ async function aiExtractBatch(
 Household context:
 ${householdSummary}
 
-For each email, extract structured information. Return a JSON array with one object per email.
+For each email, extract structured information. Return a JSON object with this shape:
+{ "items": [ one object per email ] }
 
 Event types:
 - "school_event": school newsletters, general school communication, PTA, parent-teacher
@@ -237,34 +237,21 @@ Rules:
 Emails:
 ${emailBlocks}
 
-Return ONLY a valid JSON array, no markdown, no explanation.`
+Return ONLY a valid JSON object, no markdown, no explanation.`
 
-  const message = await client.messages.create({
-    model: "claude-opus-4-7",
-    max_tokens: 3000,
-    messages: [{ role: "user", content: prompt }],
+  const parsed = await createOpenAIJsonCompletion<{ items?: AIExtracted[] }>({
+    model: getPrimaryOpenAIModel(),
+    prompt,
+    maxCompletionTokens: 3000,
   })
-
-  let text = message.content[0].type === "text" ? message.content[0].text : "[]"
-  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
-
-  const parsed = JSON.parse(text) as AIExtracted[]
   const result = new Map<string, AIExtracted>()
 
-  for (const item of parsed) {
+  for (const item of parsed.items ?? []) {
     result.set(item.gmail_message_id, { ...item, ai_processed: true })
   }
 
   return result
 }
-
-function getAnthropicUnavailableReason(error: unknown): "credits" | "auth" | null {
-  const message = error instanceof Error ? error.message : String(error ?? "")
-  if (/credit balance is too low/i.test(message)) return "credits"
-  if (/api key|authentication|auth|permission|forbidden|unauthorized/i.test(message)) return "auth"
-  return null
-}
-
 function regexExtract(email: RawEmail, context: HouseholdScanContext): Partial<ScannedEvent> {
   const haystack = `${email.from} ${email.subject} ${email.snippet}`.toLowerCase()
   let eventType: ScannedEvent["event_type"] = "other"
@@ -321,10 +308,7 @@ export async function scanEmails(
   oauthClient.setCredentials({ access_token: accessToken })
   const gmail = google.gmail({ version: "v1", auth: oauthClient })
 
-  const anthropic =
-    process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-      : null
+  const openAiConfigured = Boolean(process.env.OPENAI_API_KEY?.trim())
 
   const dateFilter = gmailDateFilter(lastScanDate)
   const queries = buildQueries(dateFilter, context)
@@ -391,16 +375,16 @@ export async function scanEmails(
   const needsAI = rawEmails.filter((email) => !alreadyProcessedIds.has(email.id))
   const aiMap = new Map<string, AIExtracted>()
 
-  if (anthropic && needsAI.length > 0) {
+  if (openAiConfigured && needsAI.length > 0) {
     const batchSize = 8
     for (let index = 0; index < needsAI.length; index += batchSize) {
       const batch = needsAI.slice(index, index + batchSize)
       try {
-        const batchResult = await aiExtractBatch(anthropic, batch, context)
+        const batchResult = await aiExtractBatch(batch, context)
         for (const [key, value] of batchResult) aiMap.set(key, value)
       } catch (error) {
         console.error("[gmail/ai] batch error", error instanceof Error ? error.message : error)
-        const unavailableReason = getAnthropicUnavailableReason(error)
+        const unavailableReason = getOpenAIUnavailableReason(error)
         if (unavailableReason) {
           aiUnavailableReason = unavailableReason
           break

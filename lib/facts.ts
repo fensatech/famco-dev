@@ -1,5 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk"
 import type { RawFact, FamilyFact, FactPredicate } from "@/types"
+import { createOpenAIJsonCompletion, getFactsOpenAIModel } from "./openai"
 
 // ── Predicate metadata ────────────────────────────────────────────────────────
 
@@ -53,7 +53,6 @@ function computeGradeLabel(dob: string | null | undefined): string {
 }
 
 export async function aiExtractFacts(
-  client: Anthropic,
   emails: RawEmail[],
   members: FamilyMember[]
 ): Promise<RawFact[]> {
@@ -96,20 +95,17 @@ Rules:
 Emails:
 ${emailBlocks}
 
-Return ONLY a valid JSON array of fact objects:
-[{ "gmail_message_id": "...", "subject": "...", "subject_type": "...", "predicate": "...", "object": "...", "confidence": 0.0 }]
+Return ONLY a valid JSON object with this shape:
+{ "items": [{ "gmail_message_id": "...", "subject": "...", "subject_type": "...", "predicate": "...", "object": "...", "confidence": 0.0 }] }
 No markdown, no explanation.`
 
   try {
-    const message = await client.messages.create({
-      model: "claude-opus-4-7",
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
+    const parsed = await createOpenAIJsonCompletion<{ items?: RawFact[] }>({
+      model: getFactsOpenAIModel(),
+      prompt,
+      maxCompletionTokens: 2000,
     })
-    let text = message.content[0].type === "text" ? message.content[0].text : "[]"
-    text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
-    const parsed = JSON.parse(text) as RawFact[]
-    return parsed.filter((f) =>
+    return (parsed.items ?? []).filter((f) =>
       f.gmail_message_id && f.subject && f.subject_type && f.predicate && f.object && f.confidence >= 0.5
     )
   } catch (err) {
