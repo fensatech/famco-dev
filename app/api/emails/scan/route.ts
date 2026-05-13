@@ -1,17 +1,28 @@
 import { NextResponse } from "next/server"
+import Anthropic from "@anthropic-ai/sdk"
 import { auth } from "@/auth"
-import { scanEmails } from "@/lib/gmail"
-import { scanOutlookEmails } from "@/lib/outlook"
-import type { HouseholdScanContext } from "@/lib/household-scan"
 import { billingEnforcementEnabled, getTrialStartedAt, getTrialWindow, isSyncAllowedForProfile } from "@/lib/billing"
 import {
-  saveScannedEvents, saveScannedOrganizations,
-  getKids, getPets, createEvent, getLastScanDate, getExistingMessageIds,
-  upsertFacts, getFamilyFacts, updateFactStatus, getScannedEvents, getPrimaryHouseholdProfile, getProfile, ensureRuntimeSchema,
+  createEvent,
+  ensureRuntimeSchema,
+  getExistingMessageIds,
+  getFamilyFacts,
+  getKids,
+  getLastScanDate,
+  getPets,
+  getPrimaryHouseholdProfile,
+  getProfile,
+  getScannedEvents,
+  saveScannedEvents,
+  saveScannedOrganizations,
+  updateFactStatus,
+  upsertFacts,
 } from "@/lib/db"
-import { seedFactsFromEvents, resolveConflicts, aiExtractFacts } from "@/lib/facts"
+import { aiExtractFacts, resolveConflicts, seedFactsFromEvents } from "@/lib/facts"
+import { scanEmails } from "@/lib/gmail"
+import type { HouseholdScanContext } from "@/lib/household-scan"
+import { scanOutlookEmails } from "@/lib/outlook"
 import type { Kid, Pet } from "@/types"
-import Anthropic from "@anthropic-ai/sdk"
 
 function isAuthError(message: string) {
   return (
@@ -88,13 +99,13 @@ export async function POST() {
   }
 
   const provider = session.provider
-
   if (provider !== "google" && provider !== "microsoft-entra-id") {
     return NextResponse.json({ ok: true, skipped: true, reason: "provider_not_supported" })
   }
 
   try {
     await ensureRuntimeSchema()
+    const warnings = new Set<string>()
 
     const billingProfile = await getPrimaryHouseholdProfile(session.profileId)
     if (billingEnforcementEnabled() && billingProfile && !isSyncAllowedForProfile(billingProfile)) {
@@ -128,73 +139,103 @@ export async function POST() {
         ? await scanEmails(session.accessToken, householdContext, lastScanDate, existingIds)
         : await scanOutlookEmails(session.accessToken, householdContext)
 
-    await Promise.all([
-      saveScannedEvents(session.profileId, result.events),
-      saveScannedOrganizations(
-        session.profileId,
-        result.organizations.map((o) => ({ name: o.name, type: o.type, email_domain: o.domain }))
-      ),
-    ])
+    if (result.ai_unavailable_reason === "credits") warnings.add("ai_credits_unavailable")
+    if (result.ai_unavailable_reason === "auth") warnings.add("ai_temporarily_unavailable")
 
-    // ── Build family knowledge graph ──────────────────────────────────────────
-    // 1. Run aiExtractFacts on new emails (cap at 15 to avoid rate limits)
-    //    This surfaces nuanced facts like teacher names, activity details
+    await saveScannedEvents(session.profileId, result.events)
+
+    try {
+      await saveScannedOrganizations(
+        session.profileId,
+        result.organizations.map((organization) => ({
+          name: organization.name,
+          type: organization.type,
+          email_domain: organization.domain,
+        })),
+      )
+    } catch (err) {
+      console.error("[scan/saveScannedOrganizations]", err instanceof Error ? err.message : err)
+      warnings.add("organization_indexing_skipped")
+    }
+
     const anthropicKey = process.env.ANTHROPIC_API_KEY
-    if (anthropicKey && result.rawEmails && result.rawEmails.length > 0) {
+    if (anthropicKey && result.rawEmails.length > 0 && !result.ai_unavailable_reason) {
       try {
         const client = new Anthropic({ apiKey: anthropicKey })
         const members = [
           { name: parentName, type: "parent" as const },
           ...(spouseName ? [{ name: spouseName, type: "parent" as const }] : []),
-          ...kids.map((k: Kid) => ({ name: k.name, type: "kid" as const, dob: k.dob ?? null, school_name: k.school_name ?? null, grade: k.grade ?? null })),
+          ...kids.map((kid: Kid) => ({
+            name: kid.name,
+            type: "kid" as const,
+            dob: kid.dob ?? null,
+            school_name: kid.school_name ?? null,
+            grade: kid.grade ?? null,
+          })),
         ]
         const emailsForAI = result.rawEmails.slice(0, 15)
         const aiFacts = await aiExtractFacts(client, emailsForAI, members)
         if (aiFacts.length > 0) await upsertFacts(session.profileId, aiFacts)
       } catch (err) {
         console.error("[scan/aiExtractFacts]", err instanceof Error ? err.message : err)
+        warnings.add("fact_enrichment_skipped")
       }
     }
 
-    // 1b. Save any structured facts from event scanning (currently always [])
-    if (result.facts && result.facts.length > 0) {
-      await upsertFacts(session.profileId, result.facts)
+    let seededFacts: ReturnType<typeof seedFactsFromEvents> = []
+    try {
+      if (result.facts.length > 0) {
+        await upsertFacts(session.profileId, result.facts)
+      }
+
+      const allEvents = await getScannedEvents(session.profileId)
+      seededFacts = seedFactsFromEvents(allEvents, [
+        { name: parentName, type: "parent" as const },
+        ...(spouseName ? [{ name: spouseName, type: "parent" as const }] : []),
+        ...kids.map((kid: Kid) => ({
+          name: kid.name,
+          type: "kid" as const,
+          dob: kid.dob ?? null,
+          school_name: kid.school_name ?? null,
+          grade: kid.grade ?? null,
+        })),
+      ])
+      if (seededFacts.length > 0) await upsertFacts(session.profileId, seededFacts)
+
+      const allFacts = await getFamilyFacts(session.profileId)
+      const conflicts = resolveConflicts(
+        allFacts,
+        kids.map((kid: Kid) => ({ name: kid.name, dob: kid.dob ?? null })),
+      )
+      for (const { id, status } of conflicts) {
+        await updateFactStatus(session.profileId, id, status)
+      }
+    } catch (err) {
+      console.error("[scan/facts]", err instanceof Error ? err.message : err)
+      warnings.add("family_knowledge_skipped")
     }
 
-    // 2. Seed facts from ALL scanned_events (idempotent — upsert deduplicates)
-    //    On first scan this bootstraps the graph from event-level data instantly
-    const allEvents = await getScannedEvents(session.profileId)
-    const seededFacts = seedFactsFromEvents(allEvents, [
-      { name: parentName, type: "parent" as const },
-      ...(spouseName ? [{ name: spouseName, type: "parent" as const }] : []),
-      ...kids.map((k: Kid) => ({ name: k.name, type: "kid" as const, dob: k.dob ?? null, school_name: k.school_name ?? null, grade: k.grade ?? null })),
-    ])
-    if (seededFacts.length > 0) await upsertFacts(session.profileId, seededFacts)
-
-    // 3. Run conflict resolution on the full fact graph
-    const allFacts = await getFamilyFacts(session.profileId)
-    const conflicts = resolveConflicts(allFacts, kids.map((k: Kid) => ({ name: k.name, dob: k.dob ?? null })))
-    for (const { id, status } of conflicts) {
-      await updateFactStatus(session.profileId, id, status)
-    }
-
-    // Auto-add calendar events for AI-flagged items
     const autoAddEvents = result.events.filter(
-      (e) => e.auto_add_to_calendar && e.event_date && e.calendar_title
+      (event) => event.auto_add_to_calendar && event.event_date && event.calendar_title,
     )
     let auto_added = 0
-    for (const e of autoAddEvents) {
+    for (const event of autoAddEvents) {
       try {
         await createEvent(session.profileId, {
-          title: e.calendar_title!,
-          event_date: e.event_date!.split("T")[0],
-          start_time: e.start_time ?? null,
-          end_time: e.end_time ?? null,
-          description: e.special_instructions ?? null,
-          member_name: e.related_member_name && e.related_member_name !== "Family" ? e.related_member_name : null,
+          title: event.calendar_title!,
+          event_date: event.event_date!.split("T")[0],
+          start_time: event.start_time ?? null,
+          end_time: event.end_time ?? null,
+          description: event.special_instructions ?? null,
+          member_name:
+            event.related_member_name && event.related_member_name !== "Family"
+              ? event.related_member_name
+              : null,
         })
         auto_added++
-      } catch { /* ignore duplicate constraint errors */ }
+      } catch {
+        // Ignore duplicate event errors so the rest of the scan can still succeed.
+      }
     }
 
     return NextResponse.json({
@@ -202,12 +243,13 @@ export async function POST() {
       provider,
       first_scan: isFirstScan,
       emails_fetched: result.events.length,
-      ai_processed: result.events.filter((e) => e.ai_processed).length,
+      ai_processed: result.events.filter((event) => event.ai_processed).length,
       skipped_already_done: existingIds.size,
       auto_added,
       facts_extracted: (result.facts?.length ?? 0) + seededFacts.length,
-      by_type: result.events.reduce<Record<string, number>>((acc, e) => {
-        acc[e.event_type] = (acc[e.event_type] ?? 0) + 1
+      warnings: Array.from(warnings),
+      by_type: result.events.reduce<Record<string, number>>((acc, event) => {
+        acc[event.event_type] = (acc[event.event_type] ?? 0) + 1
         return acc
       }, {}),
     })

@@ -104,6 +104,7 @@ export interface OutlookScanResult {
   organizations: { name: string; type: string; domain: string }[]
   facts: never[]
   rawEmails: { id: string; subject: string; from: string; snippet: string }[]
+  ai_unavailable_reason?: "credits" | "auth"
 }
 
 export async function scanOutlookEmails(

@@ -21,6 +21,7 @@ export interface EmailScanResult {
   organizations: OrgInfo[]
   facts: RawFact[]
   rawEmails: { id: string; subject: string; from: string; snippet: string }[]
+  ai_unavailable_reason?: "credits" | "auth"
 }
 
 interface RawEmail {
@@ -257,6 +258,13 @@ Return ONLY a valid JSON array, no markdown, no explanation.`
   return result
 }
 
+function getAnthropicUnavailableReason(error: unknown): "credits" | "auth" | null {
+  const message = error instanceof Error ? error.message : String(error ?? "")
+  if (/credit balance is too low/i.test(message)) return "credits"
+  if (/api key|authentication|auth|permission|forbidden|unauthorized/i.test(message)) return "auth"
+  return null
+}
+
 function regexExtract(email: RawEmail, context: HouseholdScanContext): Partial<ScannedEvent> {
   const haystack = `${email.from} ${email.subject} ${email.snippet}`.toLowerCase()
   let eventType: ScannedEvent["event_type"] = "other"
@@ -325,6 +333,7 @@ export async function scanEmails(
   const seenIds = new Set<string>()
   const rawEmails: RawEmail[] = []
   const orgMap = new Map<string, OrgInfo>()
+  let aiUnavailableReason: "credits" | "auth" | undefined
 
   async function fetchQuery(query: string, isCalendarInvite: boolean, isFinancial = false) {
     if (!query) return
@@ -391,6 +400,11 @@ export async function scanEmails(
         for (const [key, value] of batchResult) aiMap.set(key, value)
       } catch (error) {
         console.error("[gmail/ai] batch error", error instanceof Error ? error.message : error)
+        const unavailableReason = getAnthropicUnavailableReason(error)
+        if (unavailableReason) {
+          aiUnavailableReason = unavailableReason
+          break
+        }
       }
     }
   }
@@ -452,5 +466,6 @@ export async function scanEmails(
       from: email.from,
       snippet: email.snippet,
     })),
+    ai_unavailable_reason: aiUnavailableReason,
   }
 }
