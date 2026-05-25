@@ -81,6 +81,8 @@ export async function ensureRuntimeSchema() {
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS work_address TEXT;
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_work_type TEXT;
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spouse_work_address TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_inbox_sync_at TIMESTAMPTZ;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_manual_inbox_scan_at TIMESTAMPTZ;
       UPDATE profiles SET household_root_id = id WHERE household_root_id IS NULL;
       UPDATE profiles SET billing_trial_started_at = created_at WHERE billing_trial_started_at IS NULL;
       CREATE INDEX IF NOT EXISTS profiles_household_root_idx
@@ -995,6 +997,66 @@ export async function getLastScanDate(profileId: string): Promise<Date | null> {
   return rows[0]?.last_scan ?? null
 }
 
+export async function getInboxSyncState(profileId: string): Promise<{
+  lastSyncAt: Date | null
+  lastManualScanAt: Date | null
+}> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query<{
+    last_sync_at: Date | null
+    last_manual_scan_at: Date | null
+  }>(
+    `SELECT
+       p.last_inbox_sync_at AS last_sync_at,
+       p.last_manual_inbox_scan_at AS last_manual_scan_at
+     FROM profiles p
+     WHERE p.id = $1`,
+    [householdRootId],
+  )
+  return {
+    lastSyncAt: rows[0]?.last_sync_at ?? null,
+    lastManualScanAt: rows[0]?.last_manual_scan_at ?? null,
+  }
+}
+
+export async function recordInboxSync(
+  profileId: string,
+  trigger: "auto" | "manual",
+  options: { advanceSyncCursor?: boolean } = {},
+): Promise<{
+  lastSyncAt: Date | null
+  lastManualScanAt: Date | null
+}> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const advanceSyncCursor = options.advanceSyncCursor ?? true
+  const { rows } = await pool.query<{
+    last_sync_at: Date | null
+    last_manual_scan_at: Date | null
+  }>(
+    `UPDATE profiles
+     SET
+       last_inbox_sync_at = CASE
+         WHEN $3 = TRUE THEN NOW()
+         ELSE last_inbox_sync_at
+       END,
+       last_manual_inbox_scan_at = CASE
+         WHEN $2 = 'manual' THEN NOW()
+         ELSE last_manual_inbox_scan_at
+       END
+     WHERE id = $1
+     RETURNING
+       last_inbox_sync_at AS last_sync_at,
+       last_manual_inbox_scan_at AS last_manual_scan_at`,
+    [householdRootId, trigger, advanceSyncCursor],
+  )
+  return {
+    lastSyncAt: rows[0]?.last_sync_at ?? null,
+    lastManualScanAt: rows[0]?.last_manual_scan_at ?? null,
+  }
+}
+
 export async function getExistingMessageIds(profileId: string): Promise<Set<string>> {
   const pool = getPool()
   const householdRootId = await resolveHouseholdRootId(profileId)
@@ -1112,6 +1174,38 @@ export async function getScannedEvents(profileId: string) {
     scanned_at: r.scanned_at instanceof Date ? r.scanned_at.toISOString() : r.scanned_at,
     amount: r.amount != null ? Number(r.amount) : null,
   }))
+}
+
+export async function getInsightCorrectionHints(profileId: string): Promise<{
+  source_from: string | null
+  organization_name: string | null
+  corrected_member_name: string | null
+  corrected_member_type: "adult" | "child" | "pet" | "family" | null
+  corrected_event_type: string | null
+}[]> {
+  const pool = getPool()
+  const householdRootId = await resolveHouseholdRootId(profileId)
+  const { rows } = await pool.query(
+    `SELECT
+       se.source_from,
+       se.organization_name,
+       a.corrected_member_name,
+       a.corrected_member_type,
+       a.corrected_event_type
+     FROM scanned_event_actions a
+     JOIN scanned_events se ON se.id::text = a.scanned_event_id
+     WHERE a.profile_id = $1
+       AND a.relevance = 'relevant'
+       AND (
+         a.corrected_member_name IS NOT NULL
+         OR a.corrected_member_type IS NOT NULL
+         OR a.corrected_event_type IS NOT NULL
+       )
+     ORDER BY a.updated_at DESC
+     LIMIT 100`,
+    [householdRootId],
+  )
+  return rows
 }
 
 export async function getScannedOrganizations(profileId: string) {

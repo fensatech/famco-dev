@@ -42,7 +42,14 @@ export interface ScannedEventRow {
   kid_name: string | null; grade: string | null; school_name: string | null
   special_instructions: string | null; urgency: string
   auto_add_to_calendar: boolean; calendar_title: string | null; ai_processed: boolean
-  vendor: string | null; amount: number | null; recurrence: string | null
+  vendor: string | null; amount: number | null; recurrence: string | null; scanned_at?: string | null
+}
+
+export interface SystemNotice {
+  id: string
+  title: string
+  detail: string
+  tone: "info" | "warning"
 }
 
 export interface ExpenseRow {
@@ -100,6 +107,8 @@ export interface DashboardViewModel {
   insightActions: ScannedEventAction[]
   reminders: Reminder[]
   provider: string
+  lastInboxSyncAt: string | null
+  lastManualInboxScanAt: string | null
   appVersion: string
   isAdmin: boolean
 }

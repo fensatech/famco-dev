@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react"
 import type { HouseholdNotificationPreferences, Reminder } from "@/types"
+import type { SystemNotice } from "../types"
 
 interface Props {
+  systemNotices?: SystemNotice[]
   reminders: Reminder[]
   preferences?: HouseholdNotificationPreferences
   permission: NotificationPermission | "unsupported"
@@ -39,6 +41,7 @@ function getReminderBuckets(reminders: Reminder[]) {
 }
 
 export function NotificationBell({
+  systemNotices = [],
   reminders,
   preferences,
   permission,
@@ -51,6 +54,8 @@ export function NotificationBell({
   const [busyId, setBusyId] = useState<string | null>(null)
   const buckets = useMemo(() => getReminderBuckets(reminders), [reminders])
   const hasDueNow = buckets.dueNow.length > 0
+  const hasWarningNotice = systemNotices.some((notice) => notice.tone === "warning")
+  const totalCount = reminders.length + systemNotices.length
 
   async function handleDismiss(id: string) {
     setBusyId(id)
@@ -91,8 +96,8 @@ export function NotificationBell({
           height: "38px",
           borderRadius: "999px",
           border: "1px solid var(--border)",
-          background: hasDueNow ? "rgba(139,92,246,0.12)" : "rgba(255,255,255,0.7)",
-          color: hasDueNow ? "#8B5CF6" : "var(--muted)",
+          background: hasDueNow ? "rgba(139,92,246,0.12)" : hasWarningNotice ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.7)",
+          color: hasDueNow ? "#8B5CF6" : hasWarningNotice ? "#f59e0b" : "var(--muted)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -105,7 +110,7 @@ export function NotificationBell({
           <path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5" />
           <path d="M9 17a3 3 0 006 0" />
         </svg>
-        {reminders.length > 0 && (
+        {totalCount > 0 && (
           <span
             style={{
               position: "absolute",
@@ -114,7 +119,7 @@ export function NotificationBell({
               minWidth: "18px",
               height: "18px",
               borderRadius: "999px",
-              background: hasDueNow ? "#ef4444" : "#8B5CF6",
+              background: hasDueNow ? "#ef4444" : hasWarningNotice ? "#f59e0b" : "#8B5CF6",
               color: "#fff",
               fontSize: "0.6rem",
               fontWeight: 700,
@@ -124,7 +129,7 @@ export function NotificationBell({
               padding: "0 0.25rem",
             }}
           >
-            {reminders.length > 99 ? "99+" : reminders.length}
+            {totalCount > 99 ? "99+" : totalCount}
           </span>
         )}
       </button>
@@ -178,7 +183,7 @@ export function NotificationBell({
             )}
           </div>
 
-          {reminders.length === 0 ? (
+          {totalCount === 0 ? (
             <div
               style={{
                 borderRadius: "14px",
@@ -193,6 +198,36 @@ export function NotificationBell({
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", maxHeight: "420px", overflowY: "auto", paddingRight: "0.15rem" }}>
+              {systemNotices.length > 0 && (
+                <div>
+                  <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#6366F1", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.45rem" }}>
+                    Famco notices
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+                    {systemNotices.map((notice) => {
+                      const accent = notice.tone === "warning" ? "#f59e0b" : "#6366F1"
+                      return (
+                        <div
+                          key={notice.id}
+                          style={{
+                            borderRadius: "14px",
+                            border: `1px solid ${accent}22`,
+                            background: `${accent}0f`,
+                            padding: "0.8rem 0.85rem",
+                          }}
+                        >
+                          <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>
+                            {notice.title}
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.25rem", lineHeight: 1.55 }}>
+                            {notice.detail}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               {[
                 { label: "Due now", items: buckets.dueNow, accent: "#ef4444" },
                 { label: "Later today", items: buckets.laterToday, accent: "#f59e0b" },

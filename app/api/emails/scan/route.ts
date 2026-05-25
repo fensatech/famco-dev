@@ -6,11 +6,13 @@ import {
   ensureRuntimeSchema,
   getExistingMessageIds,
   getFamilyFacts,
+  getInboxSyncState,
+  getInsightCorrectionHints,
   getKids,
-  getLastScanDate,
   getPets,
   getPrimaryHouseholdProfile,
   getProfile,
+  recordInboxSync,
   getScannedEvents,
   saveScannedEvents,
   saveScannedOrganizations,
@@ -22,6 +24,11 @@ import { scanEmails } from "@/lib/gmail"
 import type { HouseholdScanContext } from "@/lib/household-scan"
 import { scanOutlookEmails } from "@/lib/outlook"
 import type { Kid, Pet } from "@/types"
+import { getHouseholdSetupStatus } from "@/app/dashboard/lib/setup"
+
+const MANUAL_SCAN_COOLDOWN_MS = 4 * 60 * 60 * 1000
+const FACT_EXTRACTION_BATCH_SIZE = 10
+const MAX_FACT_EXTRACTION_EMAILS = 40
 
 function isAuthError(message: string) {
   return (
@@ -90,7 +97,63 @@ function buildHouseholdScanContext(
   }
 }
 
-export async function POST() {
+function correctionKey(value: string | null | undefined) {
+  return value?.trim().toLowerCase() || null
+}
+
+function applyCorrectionHints<T extends {
+  source_from: string
+  organization_name: string | null
+  related_member_name?: string | null
+  related_member_type?: "adult" | "child" | "pet" | "family" | null
+  event_type: string
+  ai_processed?: boolean
+}>(
+  events: T[],
+  hints: Awaited<ReturnType<typeof getInsightCorrectionHints>>,
+): T[] {
+  if (hints.length === 0) return events
+
+  const bySource = new Map<string, (typeof hints)[number]>()
+  const byOrganization = new Map<string, (typeof hints)[number]>()
+  for (const hint of hints) {
+    const sourceKey = correctionKey(hint.source_from)
+    const orgKey = correctionKey(hint.organization_name)
+    if (sourceKey && !bySource.has(sourceKey)) bySource.set(sourceKey, hint)
+    if (orgKey && !byOrganization.has(orgKey)) byOrganization.set(orgKey, hint)
+  }
+
+  return events.map((event) => {
+    const hint =
+      bySource.get(correctionKey(event.source_from) ?? "") ??
+      byOrganization.get(correctionKey(event.organization_name) ?? "")
+    if (!hint) return event
+
+    return {
+      ...event,
+      related_member_name: event.related_member_name ?? hint.corrected_member_name,
+      related_member_type: event.related_member_type ?? hint.corrected_member_type,
+      event_type: event.ai_processed ? event.event_type : hint.corrected_event_type ?? event.event_type,
+    }
+  })
+}
+
+async function extractFactsInBatches(
+  emails: { id: string; subject: string; from: string; snippet: string }[],
+  members: Parameters<typeof aiExtractFacts>[1],
+) {
+  const facts: Awaited<ReturnType<typeof aiExtractFacts>> = []
+  const cappedEmails = emails.slice(0, MAX_FACT_EXTRACTION_EMAILS)
+
+  for (let index = 0; index < cappedEmails.length; index += FACT_EXTRACTION_BATCH_SIZE) {
+    const batch = cappedEmails.slice(index, index + FACT_EXTRACTION_BATCH_SIZE)
+    facts.push(...await aiExtractFacts(batch, members))
+  }
+
+  return facts
+}
+
+export async function POST(request: Request) {
   const session = await auth()
   if (!session?.profileId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   if (!session.accessToken || session.tokenExpired) {
@@ -105,6 +168,8 @@ export async function POST() {
   try {
     await ensureRuntimeSchema()
     const warnings = new Set<string>()
+    const body = await request.json().catch(() => ({}))
+    const trigger = body?.trigger === "manual" ? "manual" : "auto"
 
     const billingProfile = await getPrimaryHouseholdProfile(session.profileId)
     if (billingEnforcementEnabled() && billingProfile && !isSyncAllowedForProfile(billingProfile)) {
@@ -120,23 +185,94 @@ export async function POST() {
       )
     }
 
-    const [kids, pets, lastScanDate, existingIds, profile] = await Promise.all([
+    const [kids, pets, syncState, existingIds, profile, correctionHints] = await Promise.all([
       getKids(session.profileId),
       getPets(session.profileId).catch(() => []),
-      getLastScanDate(session.profileId),
+      getInboxSyncState(session.profileId),
       getExistingMessageIds(session.profileId),
       getProfile(session.profileId),
+      getInsightCorrectionHints(session.profileId).catch(() => []),
     ])
 
+    const householdSetup = getHouseholdSetupStatus(
+      {
+        firstName: profile?.first_name ?? "",
+        lastName: profile?.last_name ?? "",
+        email: profile?.email ?? "",
+        phone: profile?.phone ?? "",
+        city: profile?.city ?? "",
+        timezone: profile?.timezone ?? "",
+        familyType: profile?.family_type ?? null,
+        createdAt: profile?.created_at ?? new Date().toISOString(),
+        spouseFirstName: profile?.spouse_first_name ?? "",
+        spouseLastName: profile?.spouse_last_name ?? "",
+        spousePhone: profile?.spouse_phone ?? "",
+        spouseEmail: profile?.spouse_email ?? "",
+        addressStreet: profile?.address_street ?? "",
+        addressProvince: profile?.address_province ?? "",
+        addressPostal: profile?.address_postal ?? "",
+        addressCountry: profile?.address_country ?? "",
+        workType: profile?.work_type ?? "",
+        workAddress: profile?.work_address ?? "",
+        spouseWorkType: profile?.spouse_work_type ?? "",
+        spouseWorkAddress: profile?.spouse_work_address ?? "",
+      },
+      kids.map((kid) => ({
+        id: kid.id,
+        name: kid.name,
+        firstName: kid.first_name ?? null,
+        lastName: kid.last_name ?? null,
+        dob: kid.dob ? new Date(kid.dob).toISOString().split("T")[0] : null,
+        schoolName: kid.school_name ?? null,
+        schoolAddress: kid.school_address ?? null,
+        grade: kid.grade ?? null,
+        daycareName: kid.daycare_name ?? null,
+        daycareAddress: kid.daycare_address ?? null,
+      })),
+      pets.map((pet) => ({
+        id: pet.id,
+        name: pet.name,
+        animalType: pet.animal_type,
+        breed: pet.breed ?? null,
+        dob: pet.dob ? new Date(pet.dob).toISOString().split("T")[0] : null,
+      })),
+    )
+
+    if (!householdSetup.readyForInboxSync) {
+      return NextResponse.json(
+        {
+          error: "setup_required",
+          setup_summary: householdSetup.summary,
+        },
+        { status: 409 },
+      )
+    }
+
+    if (
+      trigger === "manual" &&
+      syncState.lastManualScanAt &&
+      Date.now() - syncState.lastManualScanAt.getTime() < MANUAL_SCAN_COOLDOWN_MS
+    ) {
+      const retryAt = new Date(syncState.lastManualScanAt.getTime() + MANUAL_SCAN_COOLDOWN_MS)
+      return NextResponse.json(
+        {
+          error: "scan_cooldown",
+          retry_at: retryAt.toISOString(),
+        },
+        { status: 429 },
+      )
+    }
+
     const householdContext = buildHouseholdScanContext(profile, kids, pets)
-    const isFirstScan = lastScanDate === null
+    const isFirstScan = syncState.lastSyncAt === null
     const parentName = profile ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "Parent" : "Parent"
     const spouseName = profile ? `${profile.spouse_first_name ?? ""} ${profile.spouse_last_name ?? ""}`.trim() : ""
 
     const result =
       provider === "google"
-        ? await scanEmails(session.accessToken, householdContext, lastScanDate, existingIds)
-        : await scanOutlookEmails(session.accessToken, householdContext)
+        ? await scanEmails(session.accessToken, householdContext, syncState.lastSyncAt, existingIds)
+        : await scanOutlookEmails(session.accessToken, householdContext, syncState.lastSyncAt, existingIds)
+    result.events = applyCorrectionHints(result.events, correctionHints)
 
     if (result.ai_unavailable_reason === "credits") warnings.add("ai_credits_unavailable")
     if (result.ai_unavailable_reason === "auth") warnings.add("ai_temporarily_unavailable")
@@ -171,9 +307,11 @@ export async function POST() {
             grade: kid.grade ?? null,
           })),
         ]
-        const emailsForAI = result.rawEmails.slice(0, 15)
-        const aiFacts = await aiExtractFacts(emailsForAI, members)
+        const aiFacts = await extractFactsInBatches(result.rawEmails, members)
         if (aiFacts.length > 0) await upsertFacts(session.profileId, aiFacts)
+        if (result.rawEmails.length > MAX_FACT_EXTRACTION_EMAILS) {
+          warnings.add("fact_enrichment_capped")
+        }
       } catch (err) {
         console.error("[scan/aiExtractFacts]", err instanceof Error ? err.message : err)
         warnings.add("fact_enrichment_skipped")
@@ -236,15 +374,23 @@ export async function POST() {
       }
     }
 
+    const advanceSyncCursor = !result.ai_unavailable_reason
+    if (!advanceSyncCursor) warnings.add("ai_enrichment_retry_pending")
+    const syncTimestamps = await recordInboxSync(session.profileId, trigger, { advanceSyncCursor })
+
     return NextResponse.json({
       ok: true,
       provider,
+      trigger,
       first_scan: isFirstScan,
       emails_fetched: result.events.length,
       ai_processed: result.events.filter((event) => event.ai_processed).length,
       skipped_already_done: existingIds.size,
       auto_added,
       facts_extracted: (result.facts?.length ?? 0) + seededFacts.length,
+      scanned_at: syncTimestamps.lastSyncAt?.toISOString() ?? (advanceSyncCursor ? new Date().toISOString() : null),
+      ai_enrichment_pending: !advanceSyncCursor,
+      last_manual_scan_at: syncTimestamps.lastManualScanAt?.toISOString() ?? null,
       warnings: Array.from(warnings),
       by_type: result.events.reduce<Record<string, number>>((acc, event) => {
         acc[event.event_type] = (acc[event.event_type] ?? 0) + 1

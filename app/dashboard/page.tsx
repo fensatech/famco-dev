@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { isAdminEmail } from "@/lib/admin"
 import { buildBillingSummary, billingEnforcementEnabled } from "@/lib/billing"
-import { ensureRuntimeSchema, getDocuments, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getHouseholdRole, getKids, getNotificationPreferences, getPets, getPrimaryHouseholdProfile, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
+import { ensureRuntimeSchema, getDocuments, getEvents, getFamilyFacts, getFamilyInvites, getHouseholdMembers, getHouseholdRole, getInboxSyncState, getKids, getNotificationPreferences, getPets, getPrimaryHouseholdProfile, getProfile, getReminders, getScannedEventActions, getScannedEvents, getTasks } from "@/lib/db"
 import type { HouseholdRole } from "@/types"
 import { DashboardShell } from "./DashboardShell"
 import packageJson from "../../package.json"
@@ -11,7 +11,7 @@ export default async function DashboardPage() {
   const session = await auth()
   if (!session?.profileId) redirect("/")
   await ensureRuntimeSchema().catch(() => {})
-  const [profile, kids, allEvents, tasks, scannedEvents, facts, documents, pets, invites, householdMembers, insightActions, reminders, householdRole, notificationPreferences] = await Promise.all([
+  const [profile, kids, allEvents, tasks, scannedEvents, facts, documents, pets, invites, householdMembers, insightActions, reminders, householdRole, notificationPreferences, inboxSyncState] = await Promise.all([
     getProfile(session.profileId),
     getKids(session.profileId),
     getEvents(session.profileId),
@@ -39,6 +39,10 @@ export default async function DashboardPage() {
       default_coparenting_offset_minutes: 120,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+    })),
+    getInboxSyncState(session.profileId).catch(() => ({
+      lastSyncAt: null,
+      lastManualScanAt: null,
     })),
   ])
   if (!profile?.onboarding_completed) redirect("/onboarding")
@@ -95,6 +99,8 @@ export default async function DashboardPage() {
       householdMembers={householdMembers}
       insightActions={insightActions}
       reminders={reminders}
+      lastInboxSyncAt={inboxSyncState.lastSyncAt ? inboxSyncState.lastSyncAt.toISOString() : null}
+      lastManualInboxScanAt={inboxSyncState.lastManualScanAt ? inboxSyncState.lastManualScanAt.toISOString() : null}
       appVersion={packageJson.version}
       isAdmin={isAdminEmail(profile.email)}
     />

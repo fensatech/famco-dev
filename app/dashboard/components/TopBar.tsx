@@ -5,11 +5,13 @@ import { NavIcon } from "./NavIcon"
 import { todayLabel } from "../lib/date"
 import type { HouseholdNotificationPreferences, Reminder } from "@/types"
 import { NotificationBell } from "./NotificationBell"
+import type { SystemNotice } from "../types"
 
 export function TopBar({
   tab,
   isMobile = false,
   appVersion,
+  systemNotices = [],
   reminders = [],
   notificationPreferences,
   notificationPermission = "default",
@@ -21,6 +23,7 @@ export function TopBar({
   tab: Tab
   isMobile?: boolean
   appVersion?: string
+  systemNotices?: SystemNotice[]
   reminders?: Reminder[]
   notificationPreferences?: HouseholdNotificationPreferences
   notificationPermission?: NotificationPermission | "unsupported"
@@ -46,6 +49,7 @@ export function TopBar({
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         {onEnableDesktopNotifications && onDismissReminder && onSnoozeReminderOneHour && onSnoozeReminderTomorrow && (
           <NotificationBell
+            systemNotices={systemNotices}
             reminders={reminders}
             preferences={notificationPreferences}
             permission={notificationPermission}

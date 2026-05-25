@@ -312,7 +312,6 @@ export async function scanEmails(
 
   const dateFilter = gmailDateFilter(lastScanDate)
   const queries = buildQueries(dateFilter, context)
-  const isFirstScan = lastScanDate === null
 
   const seenIds = new Set<string>()
   const rawEmails: RawEmail[] = []
@@ -322,45 +321,55 @@ export async function scanEmails(
   async function fetchQuery(query: string, isCalendarInvite: boolean, isFinancial = false) {
     if (!query) return
 
-    const maxResults = isFirstScan ? 100 : 50
-    const list = await gmail.users.messages.list({ userId: "me", q: query, maxResults })
-    const messages = list.data.messages ?? []
+    let pageToken: string | undefined
 
-    for (const message of messages.slice(0, isFirstScan ? 80 : 40)) {
-      if (!message.id || seenIds.has(message.id)) continue
-      seenIds.add(message.id)
-
-      const detail = await gmail.users.messages.get({
+    do {
+      const list = await gmail.users.messages.list({
         userId: "me",
-        id: message.id,
-        format: "metadata",
-        metadataHeaders: ["Subject", "Date", "From"],
+        q: query,
+        maxResults: 100,
+        pageToken,
       })
+      const messages = list.data.messages ?? []
 
-      const headers = detail.data.payload?.headers ?? []
-      const subject = headers.find((header) => header.name === "Subject")?.value ?? "(no subject)"
-      const date = headers.find((header) => header.name === "Date")?.value ?? ""
-      const from = headers.find((header) => header.name === "From")?.value ?? ""
-      const snippet = detail.data.snippet ?? ""
+      for (const message of messages) {
+        if (!message.id || seenIds.has(message.id)) continue
+        seenIds.add(message.id)
 
-      const looksFinancial = FINANCIAL_PATTERN.test(subject) || FINANCIAL_PATTERN.test(snippet)
-      if (!isFinancial && !looksFinancial && PROMO_PATTERN.test(subject)) continue
+        const detail = await gmail.users.messages.get({
+          userId: "me",
+          id: message.id,
+          format: "metadata",
+          metadataHeaders: ["Subject", "Date", "From"],
+        })
 
-      const { name: orgName, domain } = parseFromHeader(from)
-      const orgType = detectOrgType(orgName, domain, subject)
-      if (domain && !orgMap.has(domain)) {
-        orgMap.set(domain, { name: orgName, type: orgType, domain })
+        const headers = detail.data.payload?.headers ?? []
+        const subject = headers.find((header) => header.name === "Subject")?.value ?? "(no subject)"
+        const date = headers.find((header) => header.name === "Date")?.value ?? ""
+        const from = headers.find((header) => header.name === "From")?.value ?? ""
+        const snippet = detail.data.snippet ?? ""
+
+        const looksFinancial = FINANCIAL_PATTERN.test(subject) || FINANCIAL_PATTERN.test(snippet)
+        if (!isFinancial && !looksFinancial && PROMO_PATTERN.test(subject)) continue
+
+        const { name: orgName, domain } = parseFromHeader(from)
+        const orgType = detectOrgType(orgName, domain, subject)
+        if (domain && !orgMap.has(domain)) {
+          orgMap.set(domain, { name: orgName, type: orgType, domain })
+        }
+
+        rawEmails.push({
+          id: message.id,
+          subject,
+          from,
+          date,
+          snippet: snippet.slice(0, 500),
+          isCalendarInvite,
+        })
       }
 
-      rawEmails.push({
-        id: message.id,
-        subject,
-        from,
-        date,
-        snippet: snippet.slice(0, 500),
-        isCalendarInvite,
-      })
-    }
+      pageToken = list.data.nextPageToken ?? undefined
+    } while (pageToken)
   }
 
   await fetchQuery(queries.CALENDAR, true)

@@ -22,11 +22,22 @@ import { DocumentsTab } from "./tabs/DocumentsTab"
 import { SettingsTab } from "./tabs/SettingsTab"
 import { CoParentingTab } from "./tabs/CoParentingTab"
 import { BillingTab } from "./tabs/BillingTab"
-import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride, CoParentingSwapRequest } from "./types"
+import type { CalendarMemberOption, CoParentingSchedule, CoParentingOverride, CoParentingSwapRequest, SystemNotice } from "./types"
 import { memberColor } from "./lib/events"
 import { getHouseholdSetupStatus } from "./lib/setup"
 
-export function DashboardShell({ currentProfileId: _currentProfileId, currentUserFirstName, currentHouseholdRole, notificationPreferences: initialNotificationPreferences, profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, appVersion, isAdmin }: DashboardShellProps) {
+function formatNoticeTime(value: string): string {
+  const date = new Date(value)
+  return date.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+export function DashboardShell({ currentProfileId: _currentProfileId, currentUserFirstName, currentHouseholdRole, notificationPreferences: initialNotificationPreferences, profile: initialProfile, billing, kids: initialKids, pets: initialPets, provider, events: initialEvents, tasks: initialTasks, scannedEvents: initialScannedEvents, facts: initialFacts, documents: initialDocuments, invites: initialInvites, householdMembers: initialHouseholdMembers, insightActions: initialInsightActions, reminders: initialReminders, lastInboxSyncAt: initialLastInboxSyncAt, lastManualInboxScanAt: initialLastManualInboxScanAt, appVersion, isAdmin }: DashboardShellProps) {
   void _currentProfileId
   const [tab, setTab] = useState<Tab>("home")
   const [profile, setProfile] = useState(initialProfile)
@@ -263,10 +274,13 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentUse
   }
 
   const { showWarning, dismiss } = useSessionTimeout()
-  const { refreshInsights } = useInsightsRefresh({
+  const { refreshInsights, lastSyncAt, manualScanCooldownUntil, nextAutoSyncAt } = useInsightsRefresh({
     provider,
     canAutoSync: householdSetup.readyForInboxSync,
+    setupSummary: householdSetup.summary,
     initialInsightsCount: scannedEvents.length,
+    initialLastScanAt: initialLastInboxSyncAt,
+    initialLastManualScanAt: initialLastManualInboxScanAt,
     onScannedEventsUpdate: setScannedEvents,
     onFactsUpdate: setFacts,
   })
@@ -325,6 +339,22 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentUse
     const today = new Date().toISOString().split("T")[0]
     return e.event_date === today
   })
+  const systemNotices: SystemNotice[] = []
+  if (!householdSetup.readyForInboxSync) {
+    systemNotices.push({
+      id: "setup-required",
+      title: "Complete Manage Family before inbox sync",
+      detail: `Famco needs you to ${householdSetup.summary} for better email matching before it can sync Insights automatically.`,
+      tone: "warning",
+    })
+  } else if (manualScanCooldownUntil) {
+    systemNotices.push({
+      id: "scan-cooldown",
+      title: "Manual inbox scan is on cooldown",
+      detail: `Last checked ${lastSyncAt ? formatNoticeTime(lastSyncAt) : "recently"}. Manual scans are available again after ${formatNoticeTime(manualScanCooldownUntil)}; the next quiet check is ${nextAutoSyncAt ? formatNoticeTime(nextAutoSyncAt) : "scheduled automatically"}.`,
+      tone: "info",
+    })
+  }
 
   async function createInvite(data: { invitee_email: string; invited_name?: string; relation: string; role: string }) {
     const res = await fetch("/api/family/invites", {
@@ -457,6 +487,7 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentUse
           tab={tab}
           isMobile={isMobile}
           appVersion={appVersion}
+          systemNotices={systemNotices}
           reminders={activeReminders}
           notificationPreferences={notificationPreferences}
           notificationPermission={notificationPermission}
@@ -579,6 +610,9 @@ export function DashboardShell({ currentProfileId: _currentProfileId, currentUse
               provider={provider}
               canScanInbox={householdSetup.readyForInboxSync}
               setupSummary={householdSetup.summary}
+              lastSyncAt={lastSyncAt}
+              nextAutoSyncAt={nextAutoSyncAt}
+              manualScanCooldownUntil={manualScanCooldownUntil}
               onOpenSetup={() => setTab("settings")}
               onOpenBilling={() => setTab("billing")}
               onRefresh={refreshInsights}

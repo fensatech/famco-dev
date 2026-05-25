@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { canEditHousehold } from "@/lib/permissions"
 import { signOut } from "next-auth/react"
 import type { ReminderOffsetMinutes } from "@/lib/reminders"
@@ -127,6 +127,14 @@ function EventCard({
     setSavingCorrection(false)
   }
 
+  async function doMarkNotRelevant(e: { stopPropagation(): void }) {
+    e.stopPropagation()
+    if (!onCorrect || !canManage || adding !== null) return
+    setAdding("handled")
+    await onCorrect({ relevance: "not_relevant" })
+    setAdding(null)
+  }
+
   const dateStr = ev.event_date ? String(ev.event_date).slice(0, 10) : null
   const isUpcoming = !!dateStr && dateStr >= today
   const countdown = dateStr && isUpcoming ? insightsDaysUntil(dateStr, today) : null
@@ -135,6 +143,16 @@ function EventCard({
   const memberType = getScannedEventMemberType(ev, action)
   const effectiveEventType = action?.corrected_event_type ?? ev.event_type
   const relevance = action?.relevance ?? (trust.level === "review" ? "needs_review" : "relevant")
+  const recommendedAction =
+    handled
+      ? "Handled"
+      : ev.event_date && onAddCal
+        ? "Add this to the family calendar"
+        : ev.special_instructions
+          ? "Turn this into a task"
+          : onAddReminder
+            ? "Set a reminder"
+            : "Review and mark handled"
   const memberBadgeColor =
     memberType === "adult"
       ? "#818cf8"
@@ -495,7 +513,7 @@ function EventCard({
                   </div>
                 </div>
                 <div style={{ fontSize: "0.68rem", color: savingCorrection ? "#10b981" : "var(--muted)" }}>
-                  {savingCorrection ? "Saving household feedback..." : "Use these corrections to improve trust and household matching."}
+                  {savingCorrection ? "Saving household feedback..." : "Famco uses these corrections as household feedback so future matching can get sharper."}
                 </div>
               </div>
 
@@ -644,6 +662,7 @@ function EventCard({
         onClick={(e) => e.stopPropagation()}
         style={{
           display: "flex",
+          alignItems: "center",
           gap: "0.375rem",
           marginTop: "0.625rem",
           paddingTop: "0.5rem",
@@ -651,6 +670,9 @@ function EventCard({
           flexWrap: "wrap",
         }}
       >
+        <span style={{ fontSize: "0.68rem", color: handled ? "#22c55e" : priority.color, fontWeight: 700, marginRight: "0.2rem" }}>
+          {recommendedAction}
+        </span>
         {ev.event_date && (
           <button
             onClick={doAddCal}
@@ -729,6 +751,26 @@ function EventCard({
             {adding === "handled" ? "Saving..." : handled ? "Reopen" : "Mark handled"}
           </button>
         )}
+        {onCorrect && canManage && relevance !== "not_relevant" && (
+          <button
+            onClick={doMarkNotRelevant}
+            disabled={adding !== null}
+            style={{
+              fontSize: "0.68rem",
+              padding: "0.2rem 0.625rem",
+              borderRadius: "6px",
+              border: "1px solid rgba(148,163,184,0.24)",
+              background: "none",
+              color: "var(--muted)",
+              cursor: adding !== null ? "default" : "pointer",
+              fontFamily: "'Inter',sans-serif",
+              transition: "all 0.15s",
+              fontWeight: 500,
+            }}
+          >
+            Not relevant
+          </button>
+        )}
       </div>
     </div>
   )
@@ -775,9 +817,12 @@ interface Props {
   provider: string
   canScanInbox: boolean
   setupSummary: string
+  lastSyncAt: string | null
+  nextAutoSyncAt: string | null
+  manualScanCooldownUntil: string | null
   onOpenSetup: () => void
   onOpenBilling: () => void
-  onRefresh: () => Promise<{ error?: string }>
+  onRefresh: () => Promise<{ error?: string; retryAt?: string; setupSummary?: string }>
   onAddEvent: (
     title: string,
     date: string,
@@ -829,6 +874,9 @@ export function InsightsTab({
   provider,
   canScanInbox,
   setupSummary,
+  lastSyncAt,
+  nextAutoSyncAt,
+  manualScanCooldownUntil,
   onOpenSetup,
   onOpenBilling,
   onRefresh,
@@ -846,19 +894,41 @@ export function InsightsTab({
   const [refreshing, setRefreshing] = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
+  const [scanRetryAt, setScanRetryAt] = useState<string | null>(manualScanCooldownUntil)
   const [addedToCalendar, setAddedToCalendar] = useState<Set<string>>(new Set())
   const [addedAsTask, setAddedAsTask] = useState<Set<string>>(new Set())
   const [addedAsReminder, setAddedAsReminder] = useState<Set<string>>(new Set())
   const actionsById = new Map(insightActions.map((action) => [action.scanned_event_id, action]))
   const canManageInsights = canEditHousehold(role)
   const inboxProviderSupported = supportsInboxSync(provider)
+  const cooldownActive = !!scanRetryAt
+
+  useEffect(() => {
+    setScanRetryAt(manualScanCooldownUntil)
+  }, [manualScanCooldownUntil])
+
+  useEffect(() => {
+    if (!scanRetryAt) return
+    const msUntilExpiry = new Date(scanRetryAt).getTime() - Date.now()
+    if (msUntilExpiry <= 0) {
+      setScanRetryAt(null)
+      return
+    }
+    const timeout = window.setTimeout(() => setScanRetryAt(null), msUntilExpiry + 1000)
+    return () => window.clearTimeout(timeout)
+  }, [scanRetryAt])
 
   async function handleRefresh() {
     setRefreshing(true)
     setScanError(null)
+    setScanRetryAt(manualScanCooldownUntil)
     const result = await onRefresh()
-    if (result.error) setScanError(result.error)
-    else setLastRefreshed(new Date().toLocaleTimeString())
+    if (result.error) {
+      setScanError(result.error)
+      if (result.retryAt) setScanRetryAt(result.retryAt)
+    } else {
+      setLastRefreshed(new Date().toLocaleTimeString())
+    }
     setRefreshing(false)
   }
 
@@ -1039,6 +1109,39 @@ export function InsightsTab({
   const annualTotal = subscriptions
     .filter((event) => event.recurrence === "annual")
     .reduce((sum, event) => sum + Number(event.amount ?? 0), 0)
+  const needsReviewCount = all.filter((event) => actionsById.get(event.id)?.relevance === "needs_review" || getInsightTrustProfile(event, actionsById.get(event.id)).level === "review").length
+  const topPriorityCount = all.filter((event) => getInsightPriorityProfile(event, today, actionsById.get(event.id)).score >= 7).length
+  const decisionQueueCount = actionNeeded.filter((event) => actionsById.get(event.id)?.status !== "handled").length
+  const nextDatedItem = all
+    .filter((event) => {
+      const date = event.event_date ? String(event.event_date).slice(0, 10) : null
+      return date && date >= today
+    })
+    .sort((left, right) => String(left.event_date ?? "").localeCompare(String(right.event_date ?? "")))[0]
+
+  const formattedRetryAt = scanRetryAt
+    ? new Date(scanRetryAt).toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null
+  const formattedLastSync = lastSyncAt
+    ? new Date(lastSyncAt).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null
+  const formattedNextAutoSync = nextAutoSyncAt
+    ? new Date(nextAutoSyncAt).toLocaleString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null
 
   const errorBanner =
     scanError === "token_expired" ? (
@@ -1100,6 +1203,35 @@ export function InsightsTab({
           Open Billing
         </button>{" "}
         to review the timeline.
+      </div>
+    ) : scanError === "setup_required" ? (
+      <div
+        style={{
+          background: "rgba(99,102,241,0.08)",
+          border: "1px solid rgba(99,102,241,0.2)",
+          borderRadius: "12px",
+          padding: "0.75rem 1rem",
+          marginBottom: "1rem",
+          fontSize: "0.82rem",
+          color: "#4f46e5",
+        }}
+      >
+        Complete Manage Family to {setupSummary} for better results before Famco syncs your inbox automatically.
+      </div>
+    ) : scanError === "scan_cooldown" ? (
+      <div
+        style={{
+          background: "rgba(245,158,11,0.08)",
+          border: "1px solid rgba(245,158,11,0.22)",
+          borderRadius: "12px",
+          padding: "0.75rem 1rem",
+          marginBottom: "1rem",
+          fontSize: "0.82rem",
+          color: "#b45309",
+        }}
+      >
+        Manual inbox scan is on cooldown. You can scan again
+        {formattedRetryAt ? ` after ${formattedRetryAt}` : " in a few hours"} while Famco keeps syncing quietly in the background.
       </div>
     ) : scanError ? (
       <div
@@ -1172,23 +1304,190 @@ export function InsightsTab({
           >
             {sortOrder === "newest" ? "Newest first" : "Oldest first"}
           </button>
+          {inboxProviderSupported && !canScanInbox && (
+            <button
+              onClick={onOpenSetup}
+              style={{
+                ...savePillStyle,
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                color: "#fff",
+              }}
+            >
+              Complete setup first
+            </button>
+          )}
           {inboxProviderSupported && canScanInbox && (
             <button
               onClick={handleRefresh}
-              disabled={refreshing}
+              disabled={refreshing || cooldownActive}
               style={{
                 ...savePillStyle,
-                background: refreshing ? "rgba(251,191,36,0.3)" : "linear-gradient(135deg,#f59e0b,#fbbf24)",
-                color: "#000",
+                background:
+                  refreshing
+                    ? "rgba(251,191,36,0.3)"
+                    : cooldownActive
+                      ? "rgba(148,163,184,0.24)"
+                      : "linear-gradient(135deg,#f59e0b,#fbbf24)",
+                color: cooldownActive ? "var(--muted)" : "#000",
+                cursor: refreshing || cooldownActive ? "default" : "pointer",
               }}
             >
-              {refreshing ? "Scanning..." : "Scan Inbox"}
+              {refreshing ? "Scanning..." : cooldownActive ? "Scan available later" : "Scan Inbox"}
             </button>
           )}
         </div>
       </div>
 
       {errorBanner}
+
+      {!canScanInbox && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            borderRadius: "14px",
+            border: "1px solid rgba(99,102,241,0.18)",
+            background: "rgba(99,102,241,0.07)",
+            padding: "0.85rem 1rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ fontSize: "0.8rem", color: "var(--muted)", lineHeight: 1.6 }}>
+            Complete Manage Family to {setupSummary} for better results before Famco runs its first inbox sync.
+          </div>
+          <button
+            onClick={onOpenSetup}
+            style={{
+              ...savePillStyle,
+              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              color: "#fff",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Complete setup
+          </button>
+        </div>
+      )}
+
+      {canScanInbox && cooldownActive && !scanError && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            borderRadius: "14px",
+            border: "1px solid rgba(245,158,11,0.22)",
+            background: "rgba(245,158,11,0.08)",
+            padding: "0.85rem 1rem",
+            fontSize: "0.82rem",
+            color: "#b45309",
+            lineHeight: 1.6,
+          }}
+        >
+          Manual inbox scan is temporarily paused. You can run it again
+          {formattedRetryAt ? ` after ${formattedRetryAt}` : " later"} while Famco keeps syncing silently every 8 hours.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+        {[
+          {
+            label: "Needs parent decision",
+            value: decisionQueueCount,
+            detail: decisionQueueCount === 1 ? "item to triage" : "items to triage",
+            color: "#ef4444",
+            sectionId: "action",
+          },
+          {
+            label: "Next 7 days",
+            value: thisWeek.length,
+            detail: nextDatedItem ? `${nextDatedItem.calendar_title ?? nextDatedItem.title}` : "nothing dated yet",
+            color: "#10b981",
+            sectionId: "thisweek",
+          },
+          {
+            label: "Needs review",
+            value: needsReviewCount,
+            detail: "matches to teach Famco",
+            color: "#f59e0b",
+            sectionId: "action",
+          },
+          {
+            label: "Renewals found",
+            value: monthlyTotal > 0 ? `$${monthlyTotal.toFixed(0)}` : subscriptions.length,
+            detail: monthlyTotal > 0 ? "monthly subscriptions" : "payment items",
+            color: "#6366f1",
+            sectionId: "subscriptions",
+          },
+        ].map((item) => (
+          <button
+            key={item.label}
+            onClick={() => setSection(item.sectionId)}
+            style={{
+              border: `1px solid ${item.color}26`,
+              background: `${item.color}0d`,
+              borderRadius: "10px",
+              padding: "0.85rem",
+              textAlign: "left",
+              cursor: "pointer",
+              fontFamily: "'Inter',sans-serif",
+            }}
+          >
+            <div style={{ fontSize: "0.68rem", color: item.color, fontWeight: 800, marginBottom: "0.25rem" }}>
+              {item.label}
+            </div>
+            <div style={{ fontSize: "1.35rem", color: "var(--text)", fontWeight: 800, fontFamily: "'Outfit',sans-serif" }}>
+              {item.value}
+            </div>
+            <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.detail}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div
+        style={{
+          marginBottom: "1rem",
+          borderRadius: "14px",
+          border: "1px solid rgba(255,255,255,0.1)",
+          background: "rgba(255,255,255,0.04)",
+          padding: "0.85rem 1rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "0.75rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "0.78rem", color: "var(--text)", fontWeight: 800, marginBottom: "0.18rem" }}>
+            {topPriorityCount > 0
+              ? `${topPriorityCount} high-value insight${topPriorityCount === 1 ? "" : "s"} ready`
+              : all.length > 0
+                ? "Inbox is organized"
+                : "Insights will appear after the first sync"}
+          </div>
+          <div style={{ fontSize: "0.74rem", color: "var(--muted)", lineHeight: 1.55 }}>
+            Last checked {formattedLastSync ?? "not yet"}
+            {formattedNextAutoSync ? ` - next quiet check around ${formattedNextAutoSync}` : ""}.
+          </div>
+        </div>
+        {decisionQueueCount > 0 && (
+          <button
+            onClick={() => setSection("action")}
+            style={{
+              ...savePillStyle,
+              background: "linear-gradient(135deg,#ef4444,#f59e0b)",
+              color: "#fff",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open decisions
+          </button>
+        )}
+      </div>
 
       <div style={{ marginBottom: "1rem" }}>
         <div
@@ -1366,16 +1665,21 @@ export function InsightsTab({
           ) : inboxProviderSupported ? (
             <button
               onClick={handleRefresh}
-              disabled={refreshing}
+              disabled={refreshing || cooldownActive}
               style={{
                 ...savePillStyle,
-                background: refreshing ? "rgba(245,158,11,0.3)" : "linear-gradient(135deg,#f59e0b,#fbbf24)",
-                color: "#000",
+                background:
+                  refreshing
+                    ? "rgba(245,158,11,0.3)"
+                    : cooldownActive
+                      ? "rgba(148,163,184,0.24)"
+                      : "linear-gradient(135deg,#f59e0b,#fbbf24)",
+                color: cooldownActive ? "var(--muted)" : "#000",
                 padding: "0.75rem 2rem",
                 fontSize: "0.875rem",
               }}
             >
-              {refreshing ? "Scanning..." : "Scan My Inbox"}
+              {refreshing ? "Scanning..." : cooldownActive ? "Scan available later" : "Scan My Inbox"}
             </button>
           ) : null}
           {!canScanInbox && (

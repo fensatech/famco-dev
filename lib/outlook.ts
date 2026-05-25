@@ -10,6 +10,11 @@ interface GraphMessage {
   hasAttachments: boolean
 }
 
+interface GraphMessagesResponse {
+  value?: GraphMessage[]
+  "@odata.nextLink"?: string
+}
+
 type OrgType = "school" | "medical_clinic" | "dental" | "sports" | "pharmacy" | "other"
 
 const PROMO_PATTERN = /unsubscribe|% off|\bsale\b|discount|deal|offer|promo|flash sale|limited time|free shipping/i
@@ -49,55 +54,66 @@ function detectEventType(
 async function fetchMessages(
   accessToken: string,
   filter: string,
-  top = 40,
+  top = 100,
 ): Promise<GraphMessage[]> {
+  const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }
   const params = new URLSearchParams({
     $filter: filter,
     $select: "id,subject,receivedDateTime,bodyPreview,from,hasAttachments",
     $top: String(top),
     $orderby: "receivedDateTime desc",
   })
-  const response = await fetch(`https://graph.microsoft.com/v1.0/me/messages?${params}`, {
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-  })
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Graph API error: ${response.status} ${errorText}`)
+  let nextUrl: string | null = `https://graph.microsoft.com/v1.0/me/messages?${params}`
+  const messages: GraphMessage[] = []
+
+  while (nextUrl) {
+    const response = await fetch(nextUrl, { headers })
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Graph API error: ${response.status} ${errorText}`)
+    }
+    const data: GraphMessagesResponse = await response.json()
+    messages.push(...(data.value ?? []))
+    nextUrl = data["@odata.nextLink"] ?? null
   }
-  const data = await response.json()
-  return data.value ?? []
+
+  return messages
 }
 
-const SIX_MONTHS_AGO = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
+function outlookSinceFilter(since: Date | null): string {
+  const start = since
+    ? new Date(since.getTime() - 24 * 60 * 60 * 1000)
+    : new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+  return `receivedDateTime ge ${start.toISOString()}`
+}
 
-const CALENDAR_FILTER =
-  `hasAttachments eq true and receivedDateTime ge ${SIX_MONTHS_AGO} and ` +
-  `(contains(subject,'calendar invite') or contains(subject,'invitation') or ` +
-  `contains(subject,'invited') or contains(subject,'.ics'))`
+function buildOutlookFilters(since: Date | null) {
+  const dateFilter = outlookSinceFilter(since)
 
-const APPOINTMENT_FILTER =
-  `receivedDateTime ge ${SIX_MONTHS_AGO} and ` +
-  `(contains(subject,'appointment') or contains(subject,'booking confirmation') or ` +
-  `contains(subject,'your booking') or contains(subject,'appointment reminder') or ` +
-  `contains(subject,'your visit') or contains(subject,'session confirmed') or ` +
-  `contains(subject,'reservation confirmed'))`
-
-const SCHOOL_FILTER =
-  `receivedDateTime ge ${SIX_MONTHS_AGO} and ` +
-  `(contains(subject,'school') or contains(subject,'parent teacher') or ` +
-  `contains(subject,'term dates') or contains(subject,'school trip') or ` +
-  `contains(subject,'school newsletter') or contains(subject,'school event') or ` +
-  `contains(subject,'half term') or contains(subject,'school closure') or ` +
-  `contains(from/emailAddress/address,'school') or contains(from/emailAddress/address,'academy') or ` +
-  `contains(from/emailAddress/address,'daycare'))`
-
-const MEDICAL_FILTER =
-  `receivedDateTime ge ${SIX_MONTHS_AGO} and ` +
-  `(contains(from/emailAddress/address,'clinic') or contains(from/emailAddress/address,'medical') or ` +
-  `contains(from/emailAddress/address,'dental') or contains(from/emailAddress/address,'hospital') or ` +
-  `contains(from/emailAddress/address,'health') or contains(from/emailAddress/address,'vet') or ` +
-  `contains(subject,'test results') or contains(subject,'prescription') or ` +
-  `contains(subject,'health check') or contains(subject,'vaccination') or contains(subject,'referral'))`
+  return [
+    `hasAttachments eq true and ${dateFilter} and ` +
+      `(contains(subject,'calendar invite') or contains(subject,'invitation') or ` +
+      `contains(subject,'invited') or contains(subject,'.ics'))`,
+    `${dateFilter} and ` +
+      `(contains(subject,'appointment') or contains(subject,'booking confirmation') or ` +
+      `contains(subject,'your booking') or contains(subject,'appointment reminder') or ` +
+      `contains(subject,'your visit') or contains(subject,'session confirmed') or ` +
+      `contains(subject,'reservation confirmed'))`,
+    `${dateFilter} and ` +
+      `(contains(subject,'school') or contains(subject,'parent teacher') or ` +
+      `contains(subject,'term dates') or contains(subject,'school trip') or ` +
+      `contains(subject,'school newsletter') or contains(subject,'school event') or ` +
+      `contains(subject,'half term') or contains(subject,'school closure') or ` +
+      `contains(from/emailAddress/address,'school') or contains(from/emailAddress/address,'academy') or ` +
+      `contains(from/emailAddress/address,'daycare'))`,
+    `${dateFilter} and ` +
+      `(contains(from/emailAddress/address,'clinic') or contains(from/emailAddress/address,'medical') or ` +
+      `contains(from/emailAddress/address,'dental') or contains(from/emailAddress/address,'hospital') or ` +
+      `contains(from/emailAddress/address,'health') or contains(from/emailAddress/address,'vet') or ` +
+      `contains(subject,'test results') or contains(subject,'prescription') or ` +
+      `contains(subject,'health check') or contains(subject,'vaccination') or contains(subject,'referral'))`,
+  ]
+}
 
 export interface OutlookScanResult {
   events: ScannedEvent[]
@@ -110,9 +126,12 @@ export interface OutlookScanResult {
 export async function scanOutlookEmails(
   accessToken: string,
   context: HouseholdScanContext,
+  lastScanDate: Date | null = null,
+  alreadyProcessedIds: Set<string> = new Set(),
 ): Promise<OutlookScanResult> {
   const seenIds = new Set<string>()
   const allEvents: ScannedEvent[] = []
+  const rawEmails: OutlookScanResult["rawEmails"] = []
   const orgMap = new Map<string, { name: string; type: OrgType; domain: string }>()
 
   async function processQuery(filter: string) {
@@ -127,6 +146,7 @@ export async function scanOutlookEmails(
     for (const message of messages) {
       if (seenIds.has(message.id)) continue
       seenIds.add(message.id)
+      if (alreadyProcessedIds.has(message.id)) continue
 
       const subject = message.subject ?? "(no subject)"
       const preview = message.bodyPreview ?? ""
@@ -142,6 +162,12 @@ export async function scanOutlookEmails(
       if (domain && !orgMap.has(domain)) {
         orgMap.set(domain, { name: senderName, type: orgType, domain })
       }
+      rawEmails.push({
+        id: message.id,
+        subject,
+        from: senderAddress || senderName,
+        snippet: preview.slice(0, 500),
+      })
 
       const familyFallback =
         eventType === "subscription" || eventType === "invoice" || eventType === "bill"
@@ -176,10 +202,9 @@ export async function scanOutlookEmails(
     }
   }
 
-  await processQuery(CALENDAR_FILTER)
-  await processQuery(APPOINTMENT_FILTER)
-  await processQuery(SCHOOL_FILTER)
-  await processQuery(MEDICAL_FILTER)
+  for (const filter of buildOutlookFilters(lastScanDate)) {
+    await processQuery(filter)
+  }
 
   allEvents.sort((left, right) => {
     if (!left.event_date && !right.event_date) return 0
@@ -192,6 +217,6 @@ export async function scanOutlookEmails(
     events: allEvents,
     organizations: Array.from(orgMap.values()).filter((org) => org.type !== "other"),
     facts: [],
-    rawEmails: [],
+    rawEmails,
   }
 }
