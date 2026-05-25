@@ -36,13 +36,13 @@ var storageAccountName = toLower(take('${appName}${environment}${uniqueString(re
 var acrName            = toLower(take('${appName}${environment}${uniqueString(resourceGroup().id)}acr', 50))
 
 // Environment-aware SKU selection
-var postgresSkuName      = environment == 'prod' ? 'Standard_D2s_v3' : 'Standard_B2ms'
+var postgresSkuName      = environment == 'prod' ? 'Standard_D2s_v3' : 'Standard_B2s'
 var postgresTier         = environment == 'prod' ? 'GeneralPurpose'  : 'Burstable'
 var redisSkuName         = environment == 'prod' ? 'Standard'        : 'Basic'
 var redisCapacity        = environment == 'prod' ? 1                 : 0
 var containerCpu         = environment == 'prod' ? '1.0'             : '0.5'
 var containerMemory      = environment == 'prod' ? '2Gi'             : '1Gi'
-var containerMaxReplicas = environment == 'prod' ? 20                : 5
+var containerMaxReplicas = environment == 'prod' ? 20                : 1
 
 
 // ── Log Analytics (required by Container Apps) ───────────────────────────────
@@ -79,7 +79,7 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
   location: location
-  sku: { name: 'Standard' }
+  sku: { name: environment == 'prod' ? 'Standard' : 'Basic' }
   properties: { adminUserEnabled: false }
 }
 
