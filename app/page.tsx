@@ -211,9 +211,28 @@ export default async function Home({ searchParams }: HomePageProps) {
           </form>
         </div>
 
+        <div style={{ marginTop: "1.25rem", textAlign: "center" }}>
+          <a
+            href="/demo"
+            style={{
+              display: "inline-block",
+              padding: "0.5rem 1.25rem",
+              borderRadius: "10px",
+              background: "rgba(99,102,241,0.08)",
+              border: "1px solid rgba(99,102,241,0.2)",
+              color: "var(--accent)",
+              fontSize: "0.82rem",
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            👁 Preview demo — no sign-in needed
+          </a>
+        </div>
+
         <p
           style={{
-            marginTop: "1.75rem",
+            marginTop: "1.25rem",
             textAlign: "center",
             fontSize: "0.72rem",
             color: "var(--muted)",
